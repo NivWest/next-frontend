@@ -5,8 +5,24 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
 
+interface ChartPoint {
+  date: string;
+  price: number;
+}
+
+interface RawDataPoint {
+  timestamp: string | number;
+  close?: number;
+  value?: number;
+}
+
+interface ChartApiResponse {
+  ohlc?: RawDataPoint[];
+  dataSeries?: RawDataPoint[];
+}
+
 export function AssetChart() {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<ChartPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [timePeriod, setTimePeriod] = useState('ONE_MONTH');
   
@@ -15,18 +31,17 @@ export function AssetChart() {
   
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
 
     const fetchChart = async () => {
       try {
-        const res = await api<any>(`stocks/chart?orderbookID=${orderbookID}&timePeriod=${timePeriod.toLowerCase()}`);
+        const res = await api<ChartApiResponse>(`stocks/chart?orderbookID=${orderbookID}&timePeriod=${timePeriod.toLowerCase()}`);
         const series = res.ohlc || res.dataSeries;
         if (series && isMounted) {
-          const formattedData = series.map((pt: any) => {
+          const formattedData: ChartPoint[] = series.map((pt: RawDataPoint) => {
             const date = new Date(pt.timestamp);
             return {
               date: `${date.getMonth()+1}/${date.getDate()}`,
-              price: pt.close || pt.value
+              price: pt.close || pt.value || 0
             };
           });
           setData(formattedData);
@@ -70,7 +85,10 @@ export function AssetChart() {
           ].map((tf) => (
             <button 
               key={tf.val} 
-              onClick={() => setTimePeriod(tf.val)}
+              onClick={() => {
+                setLoading(true);
+                setTimePeriod(tf.val);
+              }}
               className={`px-2 py-1 rounded ${timePeriod === tf.val ? 'bg-[#27272a] text-white' : 'hover:text-white'}`}
             >
               {tf.label}
@@ -121,6 +139,11 @@ export function AssetChart() {
               dx={-10}
             />
             <Tooltip 
+              formatter={(value) => [
+                `$${Number(value ?? 0).toFixed(2)}`,
+                'Price'
+              ]}
+              separator=": "
               contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px', color: '#fff' }}
               itemStyle={{ color: changeVal >= 0 ? '#22c55e' : '#ef4444' }}
             />
