@@ -1,0 +1,27 @@
+name: Jules PR Reviewer
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  jules-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Invoke Jules Reviewer
+        uses: google-labs-code/jules-invoke@v1
+        with:
+          starting_branch: ${{ github.head_ref || github.ref_name }}
+          prompt: |
+            You are Jules, an expert AI reviewer and code corrector.
+            Please review this pull request against the guidelines in doc/architecture.md and doc/workflow.md.
+            
+            Instructions:
+            1. Review the code changes made in this PR.
+            2. Check for adherence to the architectural invariants described in doc/architecture.md.
+            3. Ensure tests are present and passing.
+            4. If any invariants are violated or if tests are missing/failing, you MUST fix the code directly on this branch. DO NOT just leave review comments. Write the fixes and commit them to this branch.

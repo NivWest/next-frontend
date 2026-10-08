@@ -1,0 +1,30 @@
+name: Jules Issue Implementer
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  jules-implement:
+    if: github.event.label.name == 'jules-implement' || github.event.label.name == 'jules'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Invoke Jules
+        uses: google-labs-code/jules-invoke@v1
+        with:
+          starting_branch: dev
+          prompt: |
+            You are Jules, an AI software engineer. 
+            Your task is to implement the changes requested in the following issue:
+            Issue Title: ${{ github.event.issue.title }}
+            Issue Body: ${{ github.event.issue.body }}
+            
+            Instructions:
+            1. Read the issue carefully.
+            2. Read AGENTS.md, doc/architecture.md, and doc/workflow.md to understand the repository structure and workflow rules.
+            3. Branch off the `dev` branch and open a Pull Request against `dev`.
+            4. Write the required code and ensure passing tests are written.
+            5. Follow the exact steps and coding standards outlined in doc/workflow.md.
