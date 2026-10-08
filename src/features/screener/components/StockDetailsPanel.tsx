@@ -108,6 +108,8 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
                 <XAxis dataKey="date" hide />
                 <YAxis domain={['auto', 'auto']} hide />
                 <Tooltip 
+                  formatter={(value: any) => [`$${Number(value || 0).toFixed(2)}`, 'Price']}
+                  separator=": "
                   contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px' }}
                   itemStyle={{ color: '#fff' }}
                 />
