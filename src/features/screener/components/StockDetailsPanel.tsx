@@ -110,6 +110,8 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px' }}
                   itemStyle={{ color: '#fff' }}
+                  formatter={(value: any) => [`$${Number(value ?? 0).toFixed(2)}`, 'Price']}
+                  separator=": "
                 />
                 <Area type="monotone" dataKey="price" stroke="#22c55e" fillOpacity={1} fill="url(#colorPrice)" />
               </AreaChart>
