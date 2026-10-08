@@ -47,6 +47,13 @@ When implementing a new feature in this repository, follow these precise steps:
   - Encapsulate async server requests within typed store actions or data-fetching hooks.
 - **Keep Stores Modular:** If a store grows too large, break it down using the slice pattern rather than creating monolithic stores.
 
+### 2.4 Module Layout Rules for Features
+When creating or refactoring a feature (`src/features/<feature-name>/`), organize into:
+- `components/` — UI components specific to this feature.
+- `store/` — Feature-local Zustand slices (if not cross-cutting).
+- `api/` — Typed API fetch functions or TanStack Query hooks.
+- `types.ts` — Domain-specific models and DTO interfaces.
+
 ---
 
 ## 3. Testing, Verification & Quality Gates

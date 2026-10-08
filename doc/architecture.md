@@ -72,16 +72,7 @@ src/
     └── useUIStore.ts           # Active view, auth session, toast notifications, cookie banner
 ```
 
-### Module Layout Rule for Features:
-When creating or refactoring a feature (`src/features/<feature-name>/`), organize into:
-- `components/` — UI components specific to this feature.
-- `store/` — Feature-local Zustand slices (if not cross-cutting).
-- `api/` — Typed API fetch functions or TanStack Query hooks.
-- `types.ts` — Domain-specific models and DTO interfaces.
-
----
-
-## 4. Current State of the Application
+## 4. System Behavior & Data Flow
 
 1. **Routing Pattern:**
    - The primary application operates as an authenticated SPA dashboard shell at `src/app/page.tsx`.
