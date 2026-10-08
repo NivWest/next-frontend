@@ -123,6 +123,8 @@ export function AssetChart() {
             <Tooltip 
               contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px', color: '#fff' }}
               itemStyle={{ color: changeVal >= 0 ? '#22c55e' : '#ef4444' }}
+              formatter={(value: unknown) => [`$${Number(value ?? 0).toFixed(2)}`, 'Price']}
+              separator=": "
             />
             <Area 
               type="monotone" 
