@@ -113,3 +113,4 @@ When creating or refactoring a feature (`src/features/<feature-name>/`), organiz
   - Do not create a `tailwind.config.js`. Extend theme variables within `@theme` in `src/app/globals.css`.
 - **GDPR & Ethical UI:**
   - Never introduce deceptive patterns (e.g. pre-checked consent boxes, disguised ads, countdown pressure tickers).
+

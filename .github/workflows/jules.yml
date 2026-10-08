@@ -6,7 +6,7 @@ on:
 
 jobs:
   jules-implement:
-    if: github.event.label.name == 'jules-implement' || github.event.label.name == 'jules'
+    if: github.event.label.name == 'jules-implement' || github.event.label.name == 'Jules'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -28,3 +28,4 @@ jobs:
             3. Branch off the `dev` branch and open a Pull Request against `dev`.
             4. Write the required code and ensure passing tests are written.
             5. Follow the exact steps and coding standards outlined in doc/workflow.md.
+

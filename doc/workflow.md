@@ -70,3 +70,4 @@ When completing tasks or submitting changes, you must run the following checks:
 
 4. **Build Note (Sandbox Environments):**
    - `npm run build` utilizes Turbopack and attempts to download Google Fonts (`next/font/google`) during compilation. In offline or network-isolated sandboxes, font fetching will fail. Rely on `npx tsc --noEmit` and `npm run lint` for isolated code verification.
+

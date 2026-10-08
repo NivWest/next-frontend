@@ -25,3 +25,4 @@ jobs:
             2. Check for adherence to the architectural invariants described in doc/architecture.md.
             3. Ensure tests are present and passing.
             4. If any invariants are violated or if tests are missing/failing, you MUST fix the code directly on this branch. DO NOT just leave review comments. Write the fixes and commit them to this branch.
+
