@@ -25,7 +25,8 @@ jobs:
             Instructions:
             1. Read the issue carefully.
             2. Read AGENTS.md (for current state), doc/architecture.md (for system architecture and data flows), and doc/workflow.md (for coding standards and step-by-step instructions).
-            3. Branch off the `dev` branch and open a Pull Request against `dev`.
+            3. Branch off the `dev` branch.
             4. Write the required code and ensure passing tests are written.
             5. Follow the exact steps and coding standards outlined in doc/workflow.md.
+            6. Open a Pull Request. You MUST explicitly set the base branch of the Pull Request to `dev` (e.g. by using `--base dev` if using the gh CLI). Do not let it default to main.
 
