@@ -26,6 +26,9 @@ If you are an AI agent operating in this repository, you must read the following
    If you are writing code, implementing a new feature, running tests, or opening/reviewing a Pull Request:
    👉 **Read `doc/workflow.md`**
 
-### Active Goals & Sprints
-For the current epic requirements and sprint roadmap, consult:
-👉 **`.agents/scrum/project_goal.md`**
+
+### Current State of the Application
+*(Agents: Update this section whenever you complete a ticket or implement a new feature. Keep it concise, highlighting newly added capabilities, architectural shifts, and current status.)*
+- **Current Status:** Initial setup / Project structure defined.
+- **Recent Updates:** 
+  - Defined initial agent workflow and architectural guidelines.

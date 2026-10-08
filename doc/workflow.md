@@ -20,7 +20,8 @@ When implementing a new feature in this repository, follow these precise steps:
 6. **Commit Strategy:** 
    - Use Conventional Commits (`feat: add something`, `fix: resolve issue`, etc.).
    - Ensure a clean, logical commit history.
-7. **Pull Request:** Open a PR against `dev` for review.
+7. **Update Agent Context:** Update the `AGENTS.md` file (specifically the "Current State of the Application" section) to reflect the newly implemented feature, architectural changes, or updated requirements.
+8. **Pull Request:** Open a PR against `dev` for review.
 
 ---
 
