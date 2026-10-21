@@ -1,0 +1,57 @@
+name: Agent task
+description: An engineering task under a Jira-linked issue that can be delegated to Jules.
+title: "[task] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Create this as a **sub-issue** of the Jira-linked issue (`SCRUM-xx: …`).
+        When every required field is filled in, add the `agent-delegate` label to hand it to Jules.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One sentence that says what changes and why.
+    validations:
+      required: true
+  - type: textarea
+    id: paths
+    attributes:
+      label: Target paths
+      description: Files or globs Jules may change, one per line.
+      placeholder: |
+        src/features/watchlist/**
+        src/lib/api.ts
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Given/When/Then. Until a test runner is added, criteria must be checkable by type check, lint or build.
+      placeholder: |
+        Given the watchlist is empty
+        When the dashboard renders
+        Then an empty-state message is shown instead of the table
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Commands that must pass before the PR is opened.
+      value: |
+        npx tsc --noEmit
+        npm run lint   # no new errors in changed files
+        npm run build
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: Anything Jules must not touch or change.
+    validations:
+      required: false
