@@ -6,7 +6,7 @@ import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
 
 export function OrderTicket() {
-  const { cash, holdings, executeTrade } = usePortfolioStore();
+  const { cash, holdings, executeTrade, selectedTradeAsset } = usePortfolioStore();
   const { addToast } = useUIStore();
   
   const [action, setAction] = useState<'buy' | 'sell'>('buy');
@@ -14,12 +14,21 @@ export function OrderTicket() {
   const [shares, setShares] = useState<number>(10);
   const [isExecuting, setIsExecuting] = useState(false);
 
-  const ticker = 'NVDA';
-  const currentPrice = 608.42; // Mocked real-time price
+  if (!selectedTradeAsset) {
+    return (
+      <div className="bg-[#0a0a0a] border border-[#27272a] rounded-xl p-5 shadow-sm text-center flex flex-col items-center justify-center min-h-[300px]">
+        <p className="text-[#a1a1aa]">Select an asset to trade</p>
+      </div>
+    );
+  }
+
+  const ticker = selectedTradeAsset.ticker;
+  const currentPrice = selectedTradeAsset.price;
+  const assetName = selectedTradeAsset.name;
   const holding = holdings.find(h => h.ticker === ticker);
   const ownedShares = holding?.shares || 0;
   
-  const maxBuy = Math.floor(cash / currentPrice);
+  const maxBuy = currentPrice > 0 ? Math.floor(cash / currentPrice) : 0;
   const maxSell = ownedShares;
   const totalValue = shares * currentPrice;
 
@@ -38,8 +47,8 @@ export function OrderTicket() {
 
     setIsExecuting(true);
     try {
-      await executeTrade(ticker, 'NVIDIA Corp.', shares, action === 'buy' ? 'BUY' : 'SELL');
-      addToast(`Successfully ${action === 'buy' ? 'bought' : 'sold'} ${shares} shares of ${ticker}.`, 'success');
+      await executeTrade(ticker, assetName, shares, action === 'buy' ? 'BUY' : 'SELL');
+      addToast(`Successfully ${action === 'buy' ? 'bought' : 'sold'} ${shares} shares of ${assetName}.`, 'success');
       setShares(0); // Reset after trade
     } catch (e: any) {
       addToast(e.message || 'Trade failed', 'error');
@@ -118,7 +127,7 @@ export function OrderTicket() {
           <div className="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center">
             <div className="w-2.5 h-2.5 bg-green-500 rounded-sm"></div>
           </div>
-          <span className="text-sm text-white">{ticker} <span className="text-[#a1a1aa]">· NVIDIA Corp.</span></span>
+          <span className="text-sm text-white">{assetName}</span>
         </div>
         <ChevronDown size={16} className="text-[#a1a1aa]" />
       </div>
@@ -129,7 +138,7 @@ export function OrderTicket() {
         className="w-full bg-white text-black font-semibold py-3 rounded-lg mb-3 hover:bg-zinc-200 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
       >
         {isExecuting ? <Loader2 size={18} className="animate-spin" /> : null}
-        {isExecuting ? 'Executing...' : `${action === 'buy' ? 'Buy' : 'Sell'} ${ticker}`}
+        {isExecuting ? 'Executing...' : `${action === 'buy' ? 'Buy' : 'Sell'} ${assetName}`}
       </button>
 
       <div className="text-center text-xs text-[#a1a1aa]">
