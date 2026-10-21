@@ -1,8 +1,9 @@
 name: Agent Implement
 
-# A human adds the `agent-delegate` label to a sub-issue (Agent task form) of a
-# Jira-linked issue. The gate checks the Definition of Ready, then Jules
-# implements the task and opens a PR against dev.
+# A human adds the `agent-delegate` label to a sub-issue of a Jira-linked
+# issue. The sub-issue only needs to say what should change; Jules works out
+# the files, acceptance criteria and tests from the code, the repo docs and the
+# parent user story, then opens a PR against dev.
 
 on:
   issues:
@@ -27,11 +28,9 @@ jobs:
       jira_url: ${{ steps.check.outputs.jira_url }}
       parent_title: ${{ steps.check.outputs.parent_title }}
       parent_url: ${{ steps.check.outputs.parent_url }}
-      goal: ${{ steps.check.outputs.goal }}
-      paths: ${{ steps.check.outputs.paths }}
-      acceptance: ${{ steps.check.outputs.acceptance }}
-      verification: ${{ steps.check.outputs.verification }}
-      out_of_scope: ${{ steps.check.outputs.out_of_scope }}
+      story: ${{ steps.check.outputs.story }}
+      task: ${{ steps.check.outputs.task }}
+      hints: ${{ steps.check.outputs.hints }}
     steps:
       - name: Check Definition of Ready
         id: check
@@ -40,26 +39,21 @@ jobs:
           script: |
             const issue = context.payload.issue;
             const { owner, repo } = context.repo;
-            const body = issue.body || '';
+            const body = (issue.body || '').replace(/<!--[\s\S]*?-->/g, '');
 
-            // Issue forms render each field as "### <Label>\n\n<value>".
+            // The Agent task form renders "### Task" and "### Hints"; a plain body counts as the task.
             function section(label) {
               const re = new RegExp(`^###\\s+${label}\\s*$([\\s\\S]*?)(?=^###\\s|(?![\\s\\S]))`, 'm');
               const text = (body.match(re)?.[1] || '').replace(/^```\w*\s*$/gm, '').trim();
               return text === '_No response_' ? '' : text;
             }
-            const fields = {
-              goal: section('Goal'),
-              paths: section('Target paths'),
-              acceptance: section('Acceptance criteria'),
-              verification: section('Verification'),
-              out_of_scope: section('Out of scope'),
-            };
+            const fromForm = /^###\s+Task\s*$/m.test(body);
+            const task = fromForm ? section('Task') : body.trim();
+            const hints = fromForm ? section('Hints') : '';
 
             const missing = [];
-            for (const [name, label] of [['goal', 'Goal'], ['paths', 'Target paths'],
-                                         ['acceptance', 'Acceptance criteria'], ['verification', 'Verification']]) {
-              if (!fields[name]) missing.push(`**${label}** is empty. Use the **Agent task** issue form.`);
+            if (task.length < 15) {
+              missing.push('Describe **what should change** in a sentence or two. Jules works out the files, the approach and the tests.');
             }
 
             let parent = null;
@@ -108,12 +102,17 @@ jobs:
               return;
             }
 
+            // The user story is the Jira description mirrored into the parent, before the sync footer.
+            const story = (parent.body || '').split(/\n---\n/)[0].trim().slice(0, 4000);
+
             core.setOutput('ready', 'true');
             core.setOutput('jira_key', jiraKey);
             core.setOutput('jira_url', parent.body?.match(/\*\*Jira:\*\*\s*(\S+)/)?.[1] || jiraKey);
             core.setOutput('parent_title', parent.title);
             core.setOutput('parent_url', parent.html_url);
-            for (const [name, value] of Object.entries(fields)) core.setOutput(name, value || 'None');
+            core.setOutput('story', story || 'None');
+            core.setOutput('task', task);
+            core.setOutput('hints', hints || 'None');
 
   implement:
     needs: gate
@@ -128,42 +127,48 @@ jobs:
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           STARTING_BRANCH: dev
           PROMPT: |
-            You are working on the TradeEdu frontend — Next.js 16.3, React 19, Tailwind v4 and Zustand.
+            You are working on the NivWest frontend — Next.js 16.3, React 19, Tailwind v4 and Zustand.
 
             ## Context
             - Jira ticket: ${{ needs.gate.outputs.jira_key }} (${{ needs.gate.outputs.jira_url }})
             - Parent issue: ${{ needs.gate.outputs.parent_title }} (${{ needs.gate.outputs.parent_url }})
             - Your task: #${{ github.event.issue.number }} — ${{ github.event.issue.title }}
 
-            ## Goal
-            ${{ needs.gate.outputs.goal }}
+            ## User story (from the parent issue)
+            ${{ needs.gate.outputs.story }}
 
-            ## Target paths
-            Only change files under these paths unless strictly required; explain any exception in the PR body.
-            ${{ needs.gate.outputs.paths }}
+            ## Task
+            ${{ needs.gate.outputs.task }}
 
-            ## Acceptance criteria
-            ${{ needs.gate.outputs.acceptance }}
+            ## Hints from the developer
+            ${{ needs.gate.outputs.hints }}
 
-            ## Out of scope
-            ${{ needs.gate.outputs.out_of_scope }}
-
-            ## Instructions
+            ## How to work
+            The task is deliberately short. Work out the details yourself:
             1. Read `AGENTS.md`, `doc/architecture.md` and `doc/workflow.md` before making changes, and follow them.
                This Next.js version has breaking changes: check `node_modules/next/dist/docs/` before using Next APIs.
-            2. Branch from `dev` as `jules/<type>/${{ needs.gate.outputs.jira_key }}-<short-slug>`
-               where `<type>` is `feat`, `fix`, `refactor` or `chore`.
-            3. Implement the change following the coding standards in `doc/workflow.md`
-               (no `any`, `export function` components, named exports, no synchronous setState in useEffect).
-            4. Update the "Current State of the Application" section in `AGENTS.md`.
-            5. Use Conventional Commits and end each subject with the Jira key,
-               e.g. `fix(chart): round tooltip price [${{ needs.gate.outputs.jira_key }}]`.
-            6. Run these and fix every failure you introduced before opening the PR:
-               ${{ needs.gate.outputs.verification }}
-            7. Open exactly one pull request targeting `dev`:
-               - Title: `${{ needs.gate.outputs.jira_key }} <type>(<scope>): <summary>`
-               - Body: summary of the change and design decisions, `Closes #${{ github.event.issue.number }}`,
-                 `Jira: ${{ needs.gate.outputs.jira_url }}`, and confirmation that the checks above pass.
+            2. Investigate the code to find where the change belongs (feature modules in `src/features/*`,
+               cross-feature state in `src/store/*`, the API client in `src/lib/api.ts`).
+            3. Check the real shape of the data you use. The backend proxies Avanza, whose JSON has quirks:
+               for example, search results return prices as strings with a decimal comma ("320,60").
+            4. Before coding, decide the acceptance criteria from the task and the user story, including empty,
+               loading and error states.
+            5. Make the smallest change that delivers the task. Do not refactor unrelated code or change files
+               the task does not need. No backend changes.
+            6. Follow the coding standards in `doc/workflow.md`: no `any` in code you write or change,
+               `export function` components, named exports, and no synchronous setState in a useEffect.
+            7. Update the "Current State of the Application" section in `AGENTS.md`.
+            8. Run `npx tsc --noEmit`, `npm run lint` (no new errors in the files you change) and `npm run build`,
+               and fix every failure you introduced.
+            9. If something is ambiguous, choose the simplest reasonable interpretation and record it as an assumption.
+            10. Branch from `dev` as `jules/<type>/${{ needs.gate.outputs.jira_key }}-<short-slug>`, where `<type>` is
+                `feat`, `fix`, `refactor` or `chore`. Use Conventional Commits and end each subject with
+                `[${{ needs.gate.outputs.jira_key }}]`.
+            11. Open exactly one pull request targeting `dev`:
+                - Title: `${{ needs.gate.outputs.jira_key }} <type>(<scope>): <summary>`
+                - Body sections: **Summary**, **Acceptance criteria** (the ones you chose, as a checklist, each with
+                  how you checked it), **Files changed** (one line each, with why), **Assumptions**, **Verification**.
+                - End the body with `Closes #${{ github.event.issue.number }}` and `Jira: ${{ needs.gate.outputs.jira_url }}`.
         run: |
           set -euo pipefail
           jq -n --arg prompt "$PROMPT" --arg branch "$STARTING_BRANCH" --arg repo "$GITHUB_REPOSITORY" '{
