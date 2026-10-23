@@ -34,11 +34,11 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      # Advisory until the existing no-explicit-any / unescaped-entities errors
-      # are cleaned up; then remove continue-on-error so lint blocks merges.
       - name: Lint
         run: npm run lint
-        continue-on-error: true
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build
