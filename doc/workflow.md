@@ -11,7 +11,7 @@ When implementing a new feature in this repository, follow these precise steps:
 1. **Understand the Architecture:** Review `doc/architecture.md` to identify which layer (e.g., feature, global UI component, store) the code belongs to.
 2. **Branching Strategy:**
    - Always branch off `dev`.
-   - Use conventional branch names (e.g., `feat/...`, `fix/...`, `chore/...`, `refactor/...`).
+   - Use GitFlow branch names: `feature/<id>-<slug>` or `bugfix/<id>-<slug>` (see section 4).
 3. **Module Construction:**
    - For a new feature, create `src/features/<feature-name>/` with subdirectories: `components/`, `store/`, `api/`, and `types.ts`.
    - Ensure the Next.js `app/` folder only contains thin route controllers, not complex UI logic.
@@ -21,7 +21,7 @@ When implementing a new feature in this repository, follow these precise steps:
    - Use Conventional Commits (`feat: add something`, `fix: resolve issue`, etc.).
    - Ensure a clean, logical commit history.
 7. **Update Agent Context:** Update the `AGENTS.md` file (specifically the "Current State of the Application" section) to reflect the newly implemented feature, architectural changes, or updated requirements.
-8. **Pull Request:** Open a PR against `dev` for review.
+8. **Pull Request:** A human opens the PR against `dev` (see section 4).
 
 ---
 
@@ -82,11 +82,30 @@ When completing tasks or submitting changes, you must run the following checks:
 
 ---
 
-## Agent Lifecycle (Jira → GitHub → Jules)
+---
 
-1. **Jira ticket → GitHub issue.** A new or reassigned Jira ticket is mirrored as an issue titled `<KEY>: <summary>` with the `jira` label, assigned to the ticket owner (`.github/workflows/jira-sync.yml`).
-2. **Breakdown.** The owner splits the issue into **sub-issues**. Each one only needs a sentence or two saying what should change: use the **Agent task** form (Task, plus optional Hints) or a plain issue body. Jules works out the files, acceptance criteria and tests from the code, these docs and the user story in the parent issue.
-3. **Delegation.** Adding the `agent-delegate` label to a sub-issue checks the Definition of Ready (a task description and a Jira-linked parent) and hands the task to Jules (`.github/workflows/agent-implement.yml`). If the task is not ready, a bot comment lists what is missing and the label is removed.
-4. **Pull request.** Jules opens one PR against `dev`, titled `<KEY> <type>(<scope>): …`. Its body lists the acceptance criteria Jules chose, the files changed, its assumptions and the verification, then `Closes #<sub-issue>`. Review against those criteria. CI must pass, and a human approves every merge.
-5. **Remediation.** Greptile reviews Jules PRs, and Jules may address the findings at most twice (`agent-fix:1`, `agent-fix:2`). After that the PR is labelled `needs-human`.
-6. **Done.** When the parent issue is closed as completed, the Jira ticket moves to Done.
+## 4. Git Workflow (GitFlow)
+
+The full rules live in the workspace repo: [`NivWest/platform` → `docs/git-workflow.md`](https://github.com/NivWest/platform/blob/main/docs/git-workflow.md). In short:
+
+### 4.1. Branches
+| Branch | From | Into | Merge method |
+|---|---|---|---|
+| `feature/<id>-<slug>` | `dev` | `dev` | squash |
+| `bugfix/<id>-<slug>` | `dev` | `dev` | squash |
+| `release/X.Y.Z` | `dev` | `main` (+ back-merge into `dev`) | merge commit |
+| `hotfix/X.Y.Z` | `main` | `main` (+ back-merge into `dev`) | merge commit |
+
+`<id>` is the GitHub Project issue number when there is one. `main` is production; every merge into it is tagged `vX.Y.Z` by CI.
+
+### 4.2. Commit Messages & PR Titles (Conventional Commits)
+`type(scope): summary`, with `type` one of `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`. Breaking changes use `!` or a `BREAKING CHANGE:` footer.
+
+Allowed scopes: the feature folder name (`portfolio`, `screener`, `watchlist`, …), or `ui`, `store`, `config`.
+
+Feature PRs are squash-merged, so the **PR title becomes the commit on `dev`** and must be a Conventional Commit (CI checks it).
+
+### 4.3. Pull Requests
+- Opened and merged by humans. AI agents (the `/story` workflow in the platform workspace) only push `feature/*` branches.
+- **Body:** summary and design decisions, the acceptance criteria as a checklist, and `Closes NivWest/platform#<id>` when there is an issue.
+- CI must pass: `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`.
