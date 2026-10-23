@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
+import type { DashboardResponse } from '@/features/portfolio/types';
+import type { Watchlist } from '@/features/watchlist/types';
 
 export interface Holding {
   ticker: string;
@@ -34,10 +36,10 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   fetchDashboard: async () => {
     try {
-      const data = await api<any>('portfolio/dashboard');
+      const data = await api<DashboardResponse>('portfolio/dashboard');
       
       const posArray = data.positions || [];
-      const holdings: Holding[] = posArray.map((pos: any) => ({
+      const holdings: Holding[] = posArray.map((pos) => ({
         ticker: pos.symbol,
         name: pos.stock_name,
         shares: pos.quantity,
@@ -78,10 +80,10 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   fetchWatchlists: async () => {
     try {
-      const data = await api<any[]>('watchlists');
+      const data = await api<Watchlist[]>('watchlists');
       if (data.length > 0) {
         const items = data[0].items || [];
-        const symbols = items.map((i: any) => i.stock.symbol);
+        const symbols = items.map((i) => i.stock.symbol);
         set({ watchlist: symbols, watchlistId: data[0].id });
       } else {
         set({ watchlist: [], watchlistId: null });
@@ -95,7 +97,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     try {
       let wlId = get().watchlistId;
       if (!wlId) {
-        const newWl = await api<any>('watchlists', {
+        const newWl = await api<Watchlist>('watchlists', {
           method: 'POST',
           body: JSON.stringify({ name: 'Default' })
         });

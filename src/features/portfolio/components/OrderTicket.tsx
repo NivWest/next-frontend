@@ -41,8 +41,8 @@ export function OrderTicket() {
       await executeTrade(ticker, 'NVIDIA Corp.', shares, action === 'buy' ? 'BUY' : 'SELL');
       addToast(`Successfully ${action === 'buy' ? 'bought' : 'sold'} ${shares} shares of ${ticker}.`, 'success');
       setShares(0); // Reset after trade
-    } catch (e: any) {
-      addToast(e.message || 'Trade failed', 'error');
+    } catch (e) {
+      addToast(e instanceof Error && e.message ? e.message : 'Trade failed', 'error');
     } finally {
       setIsExecuting(false);
     }
@@ -68,10 +68,10 @@ export function OrderTicket() {
       </div>
 
       <div className="flex justify-between items-center mb-6">
-        {['Market', 'Limit', 'Stop'].map(type => (
+        {(['Market', 'Limit', 'Stop'] as const).map(type => (
           <button 
             key={type}
-            onClick={() => setOrderType(type as any)}
+            onClick={() => setOrderType(type)}
             className={`text-sm ${orderType === type ? 'text-white border-b border-white pb-1' : 'text-[#a1a1aa] hover:text-white pb-1 border-b border-transparent transition-colors'}`}
           >
             {type}

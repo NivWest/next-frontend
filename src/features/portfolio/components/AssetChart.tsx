@@ -4,9 +4,10 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+import { toChartPoints, type ChartPoint, type ChartResponse } from '@/features/screener/types';
 
 export function AssetChart() {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<ChartPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [timePeriod, setTimePeriod] = useState('ONE_MONTH');
   
@@ -15,22 +16,12 @@ export function AssetChart() {
   
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
 
     const fetchChart = async () => {
+      setLoading(true);
       try {
-        const res = await api<any>(`stocks/chart?orderbookID=${orderbookID}&timePeriod=${timePeriod.toLowerCase()}`);
-        const series = res.ohlc || res.dataSeries;
-        if (series && isMounted) {
-          const formattedData = series.map((pt: any) => {
-            const date = new Date(pt.timestamp);
-            return {
-              date: `${date.getMonth()+1}/${date.getDate()}`,
-              price: pt.close || pt.value
-            };
-          });
-          setData(formattedData);
-        }
+        const res = await api<ChartResponse>(`stocks/chart?orderbookID=${orderbookID}&timePeriod=${timePeriod.toLowerCase()}`);
+        if (isMounted) setData(toChartPoints(res));
       } catch (e) {
         console.error(e);
       } finally {

@@ -32,7 +32,7 @@ export function Help() {
 
       <div className="bg-[#111111] border border-[#27272a] rounded-xl p-6 text-center">
         <h3 className="text-white font-medium mb-2">Still need help?</h3>
-        <p className="text-[#a1a1aa] text-sm mb-4">Send us an email and we'll get back to you within 24 hours.</p>
+        <p className="text-[#a1a1aa] text-sm mb-4">Send us an email and we&apos;ll get back to you within 24 hours.</p>
         <button className="px-6 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-zinc-200 transition-colors">
           Contact Support
         </button>

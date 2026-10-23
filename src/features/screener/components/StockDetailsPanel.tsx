@@ -1,15 +1,16 @@
 'use client';
 
-import { X, ExternalLink, Activity, Users, Info, Building2 } from 'lucide-react';
+import { X, Activity, Users, Building2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { toChartPoints, type ChartPoint, type ChartResponse, type StockDetails } from '../types';
 
 export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId: string, title: string, onClose: () => void }) {
-  const [details, setDetails] = useState<any>(null);
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [details, setDetails] = useState<StockDetails | null>(null);
+  const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const { addToWatchlist } = usePortfolioStore();
   const { addToast } = useUIStore();
@@ -20,24 +21,14 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
       setLoading(true);
       try {
         const [detailsRes, chartRes] = await Promise.all([
-          api<any>(`stocks/details?orderbookID=${orderBookId}`),
-          api<any>(`stocks/chart?orderbookID=${orderBookId}&timePeriod=one_month`)
+          api<StockDetails>(`stocks/details?orderbookID=${orderBookId}`),
+          api<ChartResponse>(`stocks/chart?orderbookID=${orderBookId}&timePeriod=one_month`)
         ]);
         
         if (isMounted) {
           setDetails(detailsRes);
           
-          const series = chartRes.ohlc || chartRes.dataSeries;
-          if (series) {
-            const formattedData = series.map((pt: any) => {
-              const date = new Date(pt.timestamp);
-              return {
-                date: `${date.getMonth()+1}/${date.getDate()}`,
-                price: pt.close || pt.value
-              };
-            });
-            setChartData(formattedData);
-          }
+          setChartData(toChartPoints(chartRes));
         }
       } catch (e) {
         console.error(e);
@@ -63,7 +54,7 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
 
   if (!details) return null;
 
-  const { company, keyIndicators, stock } = details;
+  const { company, keyIndicators } = details;
 
   const handleAddWatchlist = async () => {
     try {
@@ -71,7 +62,7 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
       const ticker = match ? match[1] : title;
       await addToWatchlist(ticker, title);
       addToast(`${title} added to watchlist!`, 'success');
-    } catch (e) {
+    } catch {
       addToast('Sign in to save to your watchlist', 'error');
     }
   };
