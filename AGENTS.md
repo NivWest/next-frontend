@@ -29,6 +29,7 @@ If you are an AI agent operating in this repository, you must read the following
 
 ### Current State of the Application
 *(Agents: Update this section whenever you complete a ticket or implement a new feature. Keep it concise, highlighting newly added capabilities, architectural shifts, and current status.)*
-- **Current Status:** Initial setup / Project structure defined.
+- **Current Status:** Feature development in progress.
 - **Recent Updates:** 
   - Defined initial agent workflow and architectural guidelines.
+  - Implemented dynamic order ticket integration (SCRUM-21), allowing users to trade selected stocks straight from the Screener's details panel using real Avanza orderbook IDs.

@@ -11,8 +11,8 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
   const [details, setDetails] = useState<any>(null);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { addToWatchlist } = usePortfolioStore();
-  const { addToast } = useUIStore();
+  const { addToWatchlist, setSelectedAsset } = usePortfolioStore();
+  const { addToast, setActiveView } = useUIStore();
 
   useEffect(() => {
     let isMounted = true;
@@ -76,6 +76,22 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
     }
   };
 
+  const handleTradeAsset = () => {
+    if (!details) return;
+    const price = details.quote?.last || 0;
+    const currency = details.listing?.currency || 'USD';
+
+    setSelectedAsset({
+      ticker: orderBookId,
+      name: title,
+      price: price,
+      currency: currency
+    });
+
+    setActiveView('Trade');
+    onClose();
+  };
+
   return (
     <div className="fixed inset-y-0 right-0 w-full md:max-w-md lg:max-w-lg bg-black border-l border-[#27272a] shadow-2xl z-50 overflow-y-auto animate-in slide-in-from-right duration-200">
       <div className="sticky top-0 bg-black/80 backdrop-blur-md border-b border-[#27272a] p-4 flex justify-between items-center z-10">
@@ -90,7 +106,7 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
           <button onClick={handleAddWatchlist} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-3 rounded-lg transition-colors">
             Add to Watchlist
           </button>
-          <button className="flex-1 bg-green-500 hover:bg-green-400 text-black font-medium py-3 rounded-lg transition-colors" onClick={() => addToast('Trading features coming soon', 'info')}>
+          <button className="flex-1 bg-green-500 hover:bg-green-400 text-black font-medium py-3 rounded-lg transition-colors" onClick={handleTradeAsset}>
             Trade Asset
           </button>
         </div>

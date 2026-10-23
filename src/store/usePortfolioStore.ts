@@ -18,8 +18,10 @@ interface PortfolioState {
   holdings: Holding[];
   watchlist: string[];
   watchlistId: number | null;
+  selectedAsset: { ticker: string; name: string; price: number; currency: string } | null;
   fetchDashboard: () => Promise<void>;
   fetchWatchlists: () => Promise<void>;
+  setSelectedAsset: (asset: { ticker: string; name: string; price: number; currency: string } | null) => void;
   executeTrade: (ticker: string, name: string, shares: number, type: 'BUY' | 'SELL') => Promise<void>;
   addToWatchlist: (ticker: string, name?: string) => Promise<void>;
   removeFromWatchlist: (stockId: string) => Promise<void>;
@@ -31,6 +33,9 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   holdings: [],
   watchlist: [],
   watchlistId: null,
+  selectedAsset: null,
+
+  setSelectedAsset: (asset) => set({ selectedAsset: asset }),
 
   fetchDashboard: async () => {
     try {

@@ -6,7 +6,7 @@ import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
 
 export function OrderTicket() {
-  const { cash, holdings, executeTrade } = usePortfolioStore();
+  const { cash, holdings, executeTrade, selectedAsset } = usePortfolioStore();
   const { addToast } = useUIStore();
   
   const [action, setAction] = useState<'buy' | 'sell'>('buy');
@@ -14,8 +14,16 @@ export function OrderTicket() {
   const [shares, setShares] = useState<number>(10);
   const [isExecuting, setIsExecuting] = useState(false);
 
-  const ticker = 'NVDA';
-  const currentPrice = 608.42; // Mocked real-time price
+  if (!selectedAsset) {
+    return (
+      <div className="bg-[#0a0a0a] border border-[#27272a] rounded-xl p-5 shadow-sm flex flex-col items-center justify-center min-h-[300px] text-center">
+        <h3 className="text-lg font-medium text-white mb-2">No Asset Selected</h3>
+        <p className="text-sm text-[#a1a1aa]">Select a stock from the Screener to open an order ticket.</p>
+      </div>
+    );
+  }
+
+  const { ticker, name, price: currentPrice, currency } = selectedAsset;
   const holding = holdings.find(h => h.ticker === ticker);
   const ownedShares = holding?.shares || 0;
   
@@ -38,8 +46,8 @@ export function OrderTicket() {
 
     setIsExecuting(true);
     try {
-      await executeTrade(ticker, 'NVIDIA Corp.', shares, action === 'buy' ? 'BUY' : 'SELL');
-      addToast(`Successfully ${action === 'buy' ? 'bought' : 'sold'} ${shares} shares of ${ticker}.`, 'success');
+      await executeTrade(ticker, name, shares, action === 'buy' ? 'BUY' : 'SELL');
+      addToast(`Successfully ${action === 'buy' ? 'bought' : 'sold'} ${shares} shares of ${name}.`, 'success');
       setShares(0); // Reset after trade
     } catch (e: any) {
       addToast(e.message || 'Trade failed', 'error');
@@ -81,13 +89,13 @@ export function OrderTicket() {
 
       <div className="text-center mb-6">
         <div className="text-3xl font-bold text-white flex items-center justify-center gap-1">
-          $ 
           <input 
             type="text" 
             value={totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
             readOnly 
-            className="bg-transparent border-none outline-none text-center w-[160px]"
+            className="bg-transparent border-none outline-none text-right w-[160px]"
           />
+          <span className="text-lg text-[#a1a1aa] font-medium ml-1">{currency}</span>
         </div>
         <div className="text-xs text-[#a1a1aa] mt-1 flex justify-center items-center gap-1">
           <input 
@@ -97,7 +105,7 @@ export function OrderTicket() {
             className="bg-transparent border-b border-zinc-700 outline-none text-center w-12 text-white"
             placeholder="0"
           /> 
-          shares of {ticker}
+          shares of {name}
         </div>
       </div>
 
@@ -118,7 +126,7 @@ export function OrderTicket() {
           <div className="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center">
             <div className="w-2.5 h-2.5 bg-green-500 rounded-sm"></div>
           </div>
-          <span className="text-sm text-white">{ticker} <span className="text-[#a1a1aa]">· NVIDIA Corp.</span></span>
+          <span className="text-sm text-white">{ticker} <span className="text-[#a1a1aa]">· {name}</span></span>
         </div>
         <ChevronDown size={16} className="text-[#a1a1aa]" />
       </div>
@@ -129,11 +137,11 @@ export function OrderTicket() {
         className="w-full bg-white text-black font-semibold py-3 rounded-lg mb-3 hover:bg-zinc-200 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
       >
         {isExecuting ? <Loader2 size={18} className="animate-spin" /> : null}
-        {isExecuting ? 'Executing...' : `${action === 'buy' ? 'Buy' : 'Sell'} ${ticker}`}
+        {isExecuting ? 'Executing...' : `${action === 'buy' ? 'Buy' : 'Sell'} ${name}`}
       </button>
 
       <div className="text-center text-xs text-[#a1a1aa]">
-        {action === 'buy' ? `Buying power $${cash.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : `${ownedShares} shares available`} · Fee $0
+        {action === 'buy' ? `Buying power ${cash.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${currency}` : `${ownedShares} shares available`} · Fee 0 {currency}
       </div>
     </div>
   );
