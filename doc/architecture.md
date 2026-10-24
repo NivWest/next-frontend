@@ -19,7 +19,7 @@
    - Automated "Right to Erasure" (account deletion) available in user settings.
 
 ### User Tiers
-- **Tier 1 — Public Explorer (Unauthenticated):** Fuzzy equity search (Avanza proxy), fundamental ratios (P/E, dividend yield, market cap), and 60fps candlestick market charts.
+- **Tier 1 — Public Explorer (Unauthenticated):** Instrument search, quotes (last, bid, ask), key indicators (P/E, dividend yield, market cap) and price charts from the backend's `/api/v1/market` API (Avanza or the simulated market).
 - **Tier 2 — Registered Trader (Authenticated):** Automatic provisioning of $100,000 virtual capital, custom watchlists, portfolio analytics, order execution (Market, Limit, Stop-Loss), and The Vault.
 
 ---
@@ -35,7 +35,7 @@
   - `lightweight-charts` (`^5.2.x`) — High-performance TradingView candlestick charting for market discovery
 - **Icons:** `lucide-react` (`^1.47.x`)
 - **Authentication:** Google OAuth / session cookie with backend pass-through (`credentials: 'include'`)
-- **Backend Service:** Go (Gin + GORM) running at `http://localhost:8081`, proxying Avanza API directly without caching.
+- **Backend Service:** Go (Gin + GORM) running at `http://localhost:8081`. Its provider-neutral `/api/v1/market` API serves either Avanza or the deterministic simulated market, selected by `MARKET_DATA_PROVIDER`; the frontend never talks to a provider directly.
   - Rewrites configured in `next.config.ts`: `/api/v1/:path*` &rarr; `http://localhost:8081/api/v1/:path*`.
 
 ---
@@ -50,8 +50,8 @@ src/
 │   ├── (app)/                  # Signed-in screens; layout = AuthGuard + AppShell
 │   │   └── dashboard/ orders/ watchlist/ analytics/ vault/ settings/   # one page.tsx each
 │   ├── (public)/               # Open to everyone; layout = AppShell
-│   │   ├── markets/page.tsx    # Screener, ?q= prefills the search
-│   │   ├── markets/[orderbookId]/page.tsx  # StockDetails instrument page
+│   │   ├── markets/page.tsx    # MarketSearch, ?q= prefills the search
+│   │   ├── markets/[orderbookId]/page.tsx  # InstrumentPage
 │   │   └── help/page.tsx
 │   ├── login/page.tsx          # Outside both groups; honours ?next via safeNextPath
 │   ├── globals.css             # Tailwind v4 imports and theme variables
@@ -66,14 +66,16 @@ src/
 │   ├── analytics/              # Performance metrics & asset allocation
 │   ├── auth/                   # Login, guest demo, AuthGuard, safeNextPath
 │   ├── help/                   # Support center & knowledge base
+│   ├── markets/                # Market data: api/market.ts, types.ts (mirror backend api/openapi.yaml), candles.ts,
+│   │                           #   MarketSearch, InstrumentPage, PriceChart, SimulatedBadge
 │   ├── orders/                 # Order history & fill statuses
 │   ├── portfolio/              # Dashboard widgets (KPICards, AssetChart, OrderTicket, HoldingsTable)
-│   ├── screener/               # Avanza stock search & filtering
 │   ├── settings/               # Profile & GDPR Right to Erasure
 │   ├── vault/                  # The Vault risk-free APY simulator
 │   └── watchlist/              # User watchlist management
 ├── lib/                        # Shared utilities and network clients
 │   ├── api.ts                  # Centralized fetch client (routes to /api/v1/)
+│   ├── format.ts               # formatMoney ('100,000.00 SEK'), formatPercent ('+1.25%')
 │   └── routes.ts               # ROUTES and URL helpers (marketsSearchHref, instrumentHref, loginHref)
 └── store/                      # Cross-feature Zustand stores
     ├── usePortfolioStore.ts    # Holdings, balance, order execution, watchlists
@@ -95,8 +97,10 @@ src/
 3. **Data Integration:**
    - `fetchDashboard()` loads portfolio total value, positions, and cash balance from `/api/v1/portfolio/dashboard`.
    - `executeTrade()` posts order payloads to `/api/v1/orders/` and refreshes portfolio state.
-   - `Screener` queries the Avanza proxy via `/api/v1/stocks/search?q=...`.
-   - `AssetChart` fetches price series from `/api/v1/stocks/chart?orderbookID=...&timePeriod=...`.
+   - Market data goes through `src/features/markets/api/market.ts`; the backend serves either Avanza or the deterministic simulated market, selected by `MARKET_DATA_PROVIDER`.
+   - `MarketSearch` searches `/api/v1/market/instruments?q=...`; `TopMovers` uses the same search to look up watchlist tickers.
+   - `InstrumentPage` loads `/api/v1/market/instruments/{id}` (details + key indicators) and `/api/v1/market/instruments/{id}/quote`.
+   - `PriceChart` (used by `InstrumentPage` and `AssetChart`) fetches `/api/v1/market/instruments/{id}/candles?period=1d|1w|1m|3m|1y`. `AssetChart` charts `DEFAULT_CHART_INSTRUMENT` (`SIM-FJRD`) until NW-05.
 
 ---
 
