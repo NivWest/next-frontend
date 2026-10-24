@@ -1,50 +1,78 @@
 'use client';
 
-import { X, Activity, Users, Building2 } from 'lucide-react';
+import { Activity, ArrowLeft, Building2, Users } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '@/lib/api';
+import { ROUTES } from '@/lib/routes';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { toChartPoints, type ChartPoint, type ChartResponse, type StockDetails } from '../types';
+import {
+  instrumentTitle,
+  toChartPoints,
+  type ChartPoint,
+  type ChartResponse,
+  type StockDetails as StockDetailsData,
+} from '../types';
 
-export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId: string, title: string, onClose: () => void }) {
-  const [details, setDetails] = useState<StockDetails | null>(null);
-  const [chartData, setChartData] = useState<ChartPoint[]>([]);
-  const [loading, setLoading] = useState(true);
+interface StockDetailsProps {
+  orderBookId: string;
+}
+
+/** Result of one fetch, tagged with the id it belongs to so a new id reads as "loading" without a sync setState. */
+type FetchResult =
+  | { id: string; ok: true; details: StockDetailsData; chartData: ChartPoint[] }
+  | { id: string; ok: false };
+
+export function StockDetails({ orderBookId }: StockDetailsProps) {
+  const [result, setResult] = useState<FetchResult | null>(null);
   const { addToWatchlist } = usePortfolioStore();
   const { addToast } = useUIStore();
 
   useEffect(() => {
     let isMounted = true;
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [detailsRes, chartRes] = await Promise.all([
-          api<StockDetails>(`stocks/details?orderbookID=${orderBookId}`),
-          api<ChartResponse>(`stocks/chart?orderbookID=${orderBookId}&timePeriod=one_month`)
-        ]);
-        
+    const id = encodeURIComponent(orderBookId);
+    Promise.all([
+      api<StockDetailsData>(`stocks/details?orderbookID=${id}`),
+      api<ChartResponse>(`stocks/chart?orderbookID=${id}&timePeriod=one_month`),
+    ])
+      .then(([detailsRes, chartRes]) => {
         if (isMounted) {
-          setDetails(detailsRes);
-          
-          setChartData(toChartPoints(chartRes));
+          setResult({ id: orderBookId, ok: true, details: detailsRes, chartData: toChartPoints(chartRes) });
         }
-      } catch (e) {
+      })
+      .catch((e: unknown) => {
         console.error(e);
-        if (isMounted) addToast('Failed to load stock details', 'error');
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+        if (isMounted) setResult({ id: orderBookId, ok: false });
+      });
+    return () => {
+      isMounted = false;
     };
-    fetchData();
-    return () => { isMounted = false; };
-  }, [orderBookId, addToast]);
+  }, [orderBookId]);
 
-  if (loading) {
+  const current = result?.id === orderBookId ? result : null;
+  const details = current?.ok ? current.details : null;
+  const title = instrumentTitle(orderBookId, details);
+
+  const header = (
+    <div className="mb-6">
+      <Link
+        href={ROUTES.markets}
+        className="inline-flex items-center gap-2 text-sm text-[#a1a1aa] hover:text-white transition-colors mb-4"
+      >
+        <ArrowLeft size={16} />
+        Back to Markets
+      </Link>
+      <h1 className="text-2xl font-bold text-white">{title}</h1>
+    </div>
+  );
+
+  if (!current) {
     return (
-      <div className="fixed inset-y-0 right-0 w-full max-w-lg bg-black border-l border-[#27272a] shadow-2xl z-50 flex items-center justify-center">
-        <div className="text-[#a1a1aa] flex flex-col items-center">
+      <div className="max-w-5xl mx-auto p-6">
+        {header}
+        <div className="text-[#a1a1aa] flex flex-col items-center py-16" role="status">
           <Activity className="w-8 h-8 animate-spin mb-4" />
           <p>Loading details for {title}...</p>
         </div>
@@ -52,9 +80,19 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
     );
   }
 
-  if (!details) return null;
+  if (!current.ok) {
+    return (
+      <div className="max-w-5xl mx-auto p-6">
+        {header}
+        <div role="alert" className="bg-[#0a0a0a] border border-[#27272a] rounded-xl p-6 text-sm text-red-500">
+          Failed to load stock details. Please try again later.
+        </div>
+      </div>
+    );
+  }
 
-  const { company, keyIndicators } = details;
+  const { company, keyIndicators } = current.details;
+  const { chartData } = current;
 
   const handleAddWatchlist = async () => {
     try {
@@ -68,15 +106,10 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full md:max-w-md lg:max-w-lg bg-black border-l border-[#27272a] shadow-2xl z-50 overflow-y-auto animate-in slide-in-from-right duration-200">
-      <div className="sticky top-0 bg-black/80 backdrop-blur-md border-b border-[#27272a] p-4 flex justify-between items-center z-10">
-        <h2 className="text-xl font-bold text-white">{title}</h2>
-        <button onClick={onClose} className="p-2 hover:bg-[#27272a] rounded-full text-[#a1a1aa] hover:text-white transition-colors">
-          <X size={20} />
-        </button>
-      </div>
+    <div className="max-w-5xl mx-auto p-6">
+      {header}
 
-      <div className="p-6 space-y-8">
+      <div className="space-y-8">
         <div className="flex gap-3">
           <button onClick={handleAddWatchlist} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-3 rounded-lg transition-colors">
             Add to Watchlist
@@ -98,7 +131,7 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
                 </defs>
                 <XAxis dataKey="date" hide />
                 <YAxis domain={['auto', 'auto']} hide />
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px' }}
                   itemStyle={{ color: '#fff' }}
                   formatter={(value: unknown) => [`$${Number(value ?? 0).toFixed(2)}`, 'Price']}
@@ -113,7 +146,7 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Building2 className="text-blue-400" size={18} />
-            <h3 className="text-lg font-semibold text-white">Company Overview</h3>
+            <h2 className="text-lg font-semibold text-white">Company Overview</h2>
           </div>
           <p className="text-sm text-[#a1a1aa] leading-relaxed mb-4">
             {company?.description || 'No description available.'}
@@ -137,9 +170,9 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Activity className="text-green-400" size={18} />
-            <h3 className="text-lg font-semibold text-white">Key Indicators</h3>
+            <h2 className="text-lg font-semibold text-white">Key Indicators</h2>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-[#111111] p-4 rounded-xl border border-[#27272a]">
               <span className="block text-xs text-[#a1a1aa] mb-1">P/E Ratio</span>
               <span className="text-lg font-medium text-white">{keyIndicators?.priceEarningsRatio?.toFixed(2) || '---'}</span>
@@ -162,14 +195,14 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Users className="text-purple-400" size={18} />
-            <h3 className="text-lg font-semibold text-white">Market Data</h3>
+            <h2 className="text-lg font-semibold text-white">Market Data</h2>
           </div>
           <div className="space-y-3">
             <div className="flex justify-between items-center py-2 border-b border-[#27272a]">
               <span className="text-[#a1a1aa] text-sm">Market Cap</span>
               <span className="text-white text-sm font-medium">
-                {keyIndicators?.marketCapital?.value ? 
-                  `${(keyIndicators.marketCapital.value / 1e9).toFixed(2)}B ${keyIndicators.marketCapital.currency}` : 
+                {keyIndicators?.marketCapital?.value ?
+                  `${(keyIndicators.marketCapital.value / 1e9).toFixed(2)}B ${keyIndicators.marketCapital.currency}` :
                   '---'
                 }
               </span>
@@ -177,8 +210,8 @@ export function StockDetailsPanel({ orderBookId, title, onClose }: { orderBookId
             <div className="flex justify-between items-center py-2 border-b border-[#27272a]">
               <span className="text-[#a1a1aa] text-sm">Outstanding Shares</span>
               <span className="text-white text-sm font-medium">
-                {company?.totalNumberOfShares ? 
-                  (company.totalNumberOfShares / 1e6).toFixed(2) + 'M' : 
+                {company?.totalNumberOfShares ?
+                  (company.totalNumberOfShares / 1e6).toFixed(2) + 'M' :
                   '---'
                 }
               </span>
