@@ -4,12 +4,19 @@ import type { Mock } from 'vitest';
 import { Login } from '../Login';
 import { useUIStore } from '@/store/useUIStore';
 
+const { replace } = vi.hoisted(() => ({ replace: vi.fn<(href: string) => void>() }));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace, push: vi.fn(), back: vi.fn(), forward: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
+}));
+
 const initialState = useUIStore.getState();
 
 let loginAsGuest: Mock<() => Promise<void>>;
 
 describe('Login', () => {
   beforeEach(() => {
+    replace.mockReset();
     loginAsGuest = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     useUIStore.setState({ loginAsGuest });
   });
@@ -63,5 +70,55 @@ describe('Login', () => {
 
     expect(button).toBeEnabled();
     expect(button).toHaveAttribute('aria-busy', 'false');
+  });
+
+  describe('redirect after sign-in', () => {
+    it('stays on the login screen while signed out', () => {
+      render(<Login next="/orders" />);
+
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it('sends a signed-in user to the next path', () => {
+      useUIStore.setState({ isAuthenticated: true });
+
+      render(<Login next="/markets?q=fjord" />);
+
+      expect(replace).toHaveBeenCalledWith('/markets?q=fjord');
+    });
+
+    it('redirects once "Try the demo" signs the guest in', async () => {
+      loginAsGuest.mockImplementation(async () => {
+        useUIStore.setState({ isAuthenticated: true });
+      });
+      render(<Login next="/orders" />);
+      expect(replace).not.toHaveBeenCalled();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Try the demo' }));
+      });
+
+      expect(replace).toHaveBeenCalledTimes(1);
+      expect(replace).toHaveBeenCalledWith('/orders');
+    });
+
+    it.each(['//evil.com', 'https://evil.com', '/login?next=%2Forders'])(
+      'falls back to /dashboard for an unsafe next (%s)',
+      (next) => {
+        useUIStore.setState({ isAuthenticated: true });
+
+        render(<Login next={next} />);
+
+        expect(replace).toHaveBeenCalledWith('/dashboard');
+      },
+    );
+
+    it('falls back to /dashboard without a next path', () => {
+      useUIStore.setState({ isAuthenticated: true });
+
+      render(<Login />);
+
+      expect(replace).toHaveBeenCalledWith('/dashboard');
+    });
   });
 });
