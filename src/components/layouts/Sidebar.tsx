@@ -1,50 +1,79 @@
 'use client';
 
-import { LayoutDashboard, ListOrdered, BarChart3, Star, ArrowDownRight, ArrowUpRight, Filter, Settings, HelpCircle, User, Vault, LogOut } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import { User, LogOut } from 'lucide-react';
 import { useUIStore } from '@/store/useUIStore';
 import { TryDemoButton } from '@/features/auth/components/TryDemoButton';
+import { ROUTES, marketsSearchHref } from '@/lib/routes';
+import { NAV_ITEMS, isNavItemActive } from './navigation';
+import type { NavItem } from './navigation';
 
-export function Sidebar() {
-  const { activeView, setActiveView, logout, isAuthenticated, user } = useUIStore();
+export interface SidebarProps {
+  /** Called after a navigation link is clicked or a search is submitted (the mobile drawer closes on it). */
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ onNavigate }: SidebarProps = {}) {
+  const { logout, isAuthenticated, user } = useUIStore();
+  const pathname = usePathname() ?? '';
+  const router = useRouter();
+  const [query, setQuery] = useState('');
 
   const handleLogout = async () => {
     await logout();
   };
 
-  return (
-    <div className="w-64 border-r border-[#27272a] h-screen p-4 flex flex-col bg-black text-[#a1a1aa] text-sm">
-      <div className="flex items-center gap-2 px-2 py-4 text-white font-semibold mb-2 text-lg cursor-pointer" onClick={() => setActiveView('Dashboard')}>
-        <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-black text-xs">T</div>
-        TradeEdu
-      </div>
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    router.push(marketsSearchHref(query));
+    onNavigate?.();
+  };
 
-      <div className="relative mb-6">
-        <input 
-          type="text" 
-          placeholder="Search tickers..." 
+  // No fixed height: the parent flex container (desktop column or mobile drawer) stretches it,
+  // so the bottom items stay inside the visible viewport on mobile browsers too.
+  return (
+    <div className="w-64 border-r border-[#27272a] min-h-0 p-4 flex flex-col bg-black text-[#a1a1aa] text-sm">
+      <Link
+        href={ROUTES.dashboard}
+        onClick={onNavigate}
+        className="flex items-center gap-2 px-2 py-4 text-white font-semibold mb-2 text-lg"
+      >
+        <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-black text-xs" aria-hidden="true">T</div>
+        TradeEdu
+      </Link>
+
+      <form role="search" onSubmit={handleSearch} className="relative mb-6">
+        <input
+          type="search"
+          aria-label="Search markets"
+          placeholder="Search tickers..."
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
           className="w-full bg-[#111111] border border-[#27272a] rounded-full py-1.5 px-4 pl-8 text-sm outline-none focus:border-zinc-500"
         />
-        <svg className="w-4 h-4 absolute left-3 top-2 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-      </div>
+        <svg className="w-4 h-4 absolute left-3 top-2 text-zinc-500" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      </form>
 
-      <nav className="flex-1 space-y-1">
-        <NavItem icon={<LayoutDashboard size={18} />} label="Dashboard" active={activeView === 'Dashboard'} onClick={() => setActiveView('Dashboard')} />
-        <NavItem icon={<Star size={18} />} label="Watchlist" active={activeView === 'Watchlist'} onClick={() => setActiveView('Watchlist')} />
-        <NavItem icon={<Vault size={18} />} label="The Vault" active={activeView === 'Vault'} onClick={() => setActiveView('Vault')} />
-        <NavItem icon={<ListOrdered size={18} />} label="Orders" active={activeView === 'Orders'} onClick={() => setActiveView('Orders')} />
-        <NavItem icon={<BarChart3 size={18} />} label="Analytics" active={activeView === 'Analytics'} onClick={() => setActiveView('Analytics')} />
-        
-        <div className="my-4 border-t border-[#27272a]"></div>
+      <nav aria-label="Main" className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+        <ul className="space-y-1">
+          {NAV_ITEMS.main.map((item) => (
+            <li key={item.href}>
+              <NavLink item={item} active={isNavItemActive(pathname, item.href)} onNavigate={onNavigate} />
+            </li>
+          ))}
+        </ul>
 
-        <NavItem icon={<ArrowDownRight size={18} />} label="Buy" active={activeView === 'Trade'} onClick={() => setActiveView('Trade')} />
-        <NavItem icon={<ArrowUpRight size={18} />} label="Sell" active={activeView === 'Trade'} onClick={() => setActiveView('Trade')} />
-        <NavItem icon={<Filter size={18} />} label="Screener" active={activeView === 'Screener'} onClick={() => setActiveView('Screener')} />
+        <ul className="mt-auto space-y-1">
+          {NAV_ITEMS.footer.map((item) => (
+            <li key={item.href}>
+              <NavLink item={item} active={isNavItemActive(pathname, item.href)} onNavigate={onNavigate} />
+            </li>
+          ))}
+        </ul>
       </nav>
-
-      <div className="mt-auto space-y-1">
-        <NavItem icon={<Settings size={18} />} label="Settings" active={activeView === 'Settings'} onClick={() => setActiveView('Settings')} />
-        <NavItem icon={<HelpCircle size={18} />} label="Help center" active={activeView === 'Help'} onClick={() => setActiveView('Help')} rightElement={<div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span><span className="text-xs">Online</span></div>} />
-      </div>
 
       <div className="mt-4 pt-4 border-t border-[#27272a]">
         {!isAuthenticated ? (
@@ -92,14 +121,23 @@ export function Sidebar() {
   );
 }
 
-function NavItem({ icon, label, active, rightElement, onClick }: { icon: React.ReactNode, label: string, active?: boolean, rightElement?: React.ReactNode, onClick?: () => void }) {
+interface NavLinkProps {
+  item: NavItem;
+  active: boolean;
+  onNavigate?: () => void;
+}
+
+function NavLink({ item, active, onNavigate }: NavLinkProps) {
+  const Icon = item.icon;
   return (
-    <div onClick={onClick} className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${active ? 'bg-[#27272a] text-white' : 'hover:bg-[#111111] hover:text-white'}`}>
-      <div className="flex items-center gap-3">
-        {icon}
-        <span>{label}</span>
-      </div>
-      {rightElement}
-    </div>
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${active ? 'bg-[#27272a] text-white' : 'hover:bg-[#111111] hover:text-white'}`}
+    >
+      <Icon size={18} aria-hidden="true" />
+      <span>{item.label}</span>
+    </Link>
   );
 }

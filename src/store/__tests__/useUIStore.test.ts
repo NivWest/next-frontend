@@ -81,7 +81,6 @@ describe('checkAuth', () => {
 
 describe('loginAsGuest', () => {
   it('POSTs to /api/v1/auth/guest, then fetches the profile and ends authenticated', async () => {
-    useUIStore.setState({ activeView: 'Login' });
     fetchMock
       .mockResolvedValueOnce(jsonResponse(guestProfile, 201))
       .mockResolvedValueOnce(jsonResponse(guestProfile));
@@ -98,7 +97,6 @@ describe('loginAsGuest', () => {
     const state = useUIStore.getState();
     expect(state.isAuthenticated).toBe(true);
     expect(state.user).toEqual(guestProfile);
-    expect(state.activeView).toBe('Dashboard');
     expect(state.toasts).toEqual([]);
   });
 
@@ -137,7 +135,7 @@ describe('loginAsGuest', () => {
 
 describe('logout', () => {
   it('POSTs to /api/v1/auth/logout and clears the user', async () => {
-    useUIStore.setState({ isAuthenticated: true, user: guestProfile, activeView: 'Vault' });
+    useUIStore.setState({ isAuthenticated: true, user: guestProfile });
     fetchMock.mockResolvedValueOnce(noContent());
 
     await useUIStore.getState().logout();
@@ -149,6 +147,5 @@ describe('logout', () => {
     const state = useUIStore.getState();
     expect(state.isAuthenticated).toBe(false);
     expect(state.user).toBeNull();
-    expect(state.activeView).toBe('Dashboard');
   });
 });

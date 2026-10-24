@@ -1,16 +1,23 @@
 'use client';
 
 import { Filter, Search, SlidersHorizontal, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { StockDetailsPanel } from './StockDetailsPanel';
+import { instrumentHref } from '@/lib/routes';
 import type { SearchHit, SearchResponse } from '../types';
 
-export function Screener() {
-  const [query, setQuery] = useState('');
+interface ScreenerProps {
+  /** Initial search text, e.g. the `q` search param of /markets. Re-key the component to apply a new one. */
+  initialQuery?: string;
+}
+
+export function Screener({ initialQuery = '' }: ScreenerProps) {
+  const router = useRouter();
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedStock, setSelectedStock] = useState<{id: string, title: string} | null>(null);
 
   useEffect(() => {
     // Short queries show a hint instead of results (see visibleResults), so there is nothing to fetch.
@@ -41,7 +48,7 @@ export function Screener() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
           <Filter className="text-white" />
-          <h1 className="text-2xl font-bold text-white">Stock Screener</h1>
+          <h1 className="text-2xl font-bold text-white">Markets</h1>
         </div>
         <button className="flex items-center gap-2 px-4 py-2 bg-[#27272a] hover:bg-[#3f3f46] text-white rounded-lg transition-colors text-sm font-medium">
           <SlidersHorizontal size={16} />
@@ -54,6 +61,7 @@ export function Screener() {
           <Search className="absolute left-3 top-2.5 text-[#a1a1aa]" size={18} />
           <input 
             type="text" 
+            aria-label="Search markets"
             placeholder="Search by ticker, company, or sector..." 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -111,15 +119,22 @@ export function Screener() {
               const currency = stock.price?.currency || '';
               const changeStr = stock.price?.todayChangePercent?.toString().replace(',', '.') || '0';
               const changeDir = stock.price?.todayChangeDirection || 0; // 1 up, -1 down
-              
+              const href = instrumentHref(stock.orderBookId);
+
               return (
                 <tr 
                   key={stock.orderBookId} 
                   className="hover:bg-[#111111] transition-colors cursor-pointer"
-                  onClick={() => setSelectedStock({ id: stock.orderBookId, title: stock.title })}
+                  onClick={() => router.push(href)}
                 >
                   <td className="px-6 py-4">
-                    <div className="font-medium text-white">{stock.title}</div>
+                    <Link
+                      href={href}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-medium text-white hover:underline focus-visible:underline outline-none"
+                    >
+                      {stock.title}
+                    </Link>
                     <div className="text-xs text-[#a1a1aa]">ID: {stock.orderBookId}</div>
                   </td>
                   <td className="px-6 py-4 text-right text-white">{price}</td>
@@ -134,14 +149,6 @@ export function Screener() {
           </tbody>
         </table>
       </div>
-
-      {selectedStock && (
-        <StockDetailsPanel 
-          orderBookId={selectedStock.id} 
-          title={selectedStock.title} 
-          onClose={() => setSelectedStock(null)} 
-        />
-      )}
     </div>
   );
 }

@@ -28,7 +28,7 @@ export function Orders() {
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center gap-3 mb-6">
         <ListOrdered className="text-white" />
-        <h1 className="text-2xl font-bold text-white">Order History</h1>
+        <h1 className="text-2xl font-bold text-white">Orders</h1>
       </div>
 
       <div className="bg-[#0a0a0a] border border-[#27272a] rounded-xl shadow-sm overflow-hidden">
