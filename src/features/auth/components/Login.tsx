@@ -1,11 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
+import { useUIStore } from '@/store/useUIStore';
+import { safeNextPath } from '../safe-next';
 import { TryDemoButton } from './TryDemoButton';
 
-export function Login() {
+export interface LoginProps {
+  /** Path to open once signed in (from `/login?next=`); unsafe values fall back to the dashboard. */
+  next?: string;
+}
+
+export function Login({ next }: LoginProps = {}) {
   const [isConnecting, setIsConnecting] = useState(false);
+  const isAuthenticated = useUIStore((state) => state.isAuthenticated);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace(safeNextPath(next));
+    }
+  }, [isAuthenticated, next, router]);
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-black">
