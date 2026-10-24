@@ -18,7 +18,7 @@ import { ToastContainer } from '@/components/ui/ToastContainer';
 import { CookieBanner } from '@/components/ui/CookieBanner';
 import { Calendar, Download } from 'lucide-react';
 import { useUIStore } from '@/store/useUIStore';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 export default function App() {
   const { activeView, isAuthenticated, isAuthChecking, checkAuth } = useUIStore();

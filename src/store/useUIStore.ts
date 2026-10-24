@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
+import type { ProfileResponse } from '@/features/auth/types';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -67,9 +68,9 @@ export const useUIStore = create<UIState>((set) => ({
 
   checkAuth: async () => {
     try {
-      const data = await api<any>('user/profile');
+      const data = await api<ProfileResponse>('user/profile');
       set({ isAuthenticated: true, isAuthChecking: false, user: { name: data.name, email: data.email } });
-    } catch (e) {
+    } catch {
       set({ isAuthenticated: false, isAuthChecking: false, user: null });
     }
   }

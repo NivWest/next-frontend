@@ -4,25 +4,24 @@ import { Filter, Search, SlidersHorizontal, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { StockDetailsPanel } from './StockDetailsPanel';
+import type { SearchHit, SearchResponse } from '../types';
 
 export function Screener() {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedStock, setSelectedStock] = useState<{id: string, title: string} | null>(null);
 
   useEffect(() => {
-    if (!query || query.length < 2) {
-      setResults([]);
-      return;
-    }
+    // Short queries show a hint instead of results (see visibleResults), so there is nothing to fetch.
+    if (!query || query.length < 2) return;
 
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const data = await api<any>(`stocks/search?q=${encodeURIComponent(query)}`);
+        const data = await api<SearchResponse>(`stocks/search?q=${encodeURIComponent(query)}`);
         if (data && data.hits) {
-          const stocks = data.hits.filter((h: any) => h.type === 'STOCK').slice(0, 15);
+          const stocks = data.hits.filter((h) => h.type === 'STOCK').slice(0, 15);
           setResults(stocks);
         }
       } catch (e) {
@@ -34,6 +33,8 @@ export function Screener() {
 
     return () => clearTimeout(timer);
   }, [query]);
+
+  const visibleResults = query.length >= 2 ? results : [];
 
   return (
     <div className="max-w-5xl mx-auto p-6">
@@ -91,25 +92,24 @@ export function Screener() {
                 </td>
               </tr>
             )}
-            {!loading && results.length === 0 && query.length >= 2 && (
+            {!loading && visibleResults.length === 0 && query.length >= 2 && (
               <tr>
                 <td colSpan={5} className="px-6 py-8 text-center text-[#a1a1aa]">
-                  No stocks found for "{query}".
+                  No stocks found for &quot;{query}&quot;.
                 </td>
               </tr>
             )}
-            {!loading && results.length === 0 && query.length < 2 && (
+            {!loading && visibleResults.length === 0 && query.length < 2 && (
               <tr>
                 <td colSpan={5} className="px-6 py-8 text-center text-[#a1a1aa]">
                   Type at least 2 characters to search Avanza API.
                 </td>
               </tr>
             )}
-            {!loading && results.map(stock => {
+            {!loading && visibleResults.map(stock => {
               const price = stock.price?.last || 0;
               const currency = stock.price?.currency || '';
               const changeStr = stock.price?.todayChangePercent?.toString().replace(',', '.') || '0';
-              const changeVal = parseFloat(changeStr);
               const changeDir = stock.price?.todayChangeDirection || 0; // 1 up, -1 down
               
               return (

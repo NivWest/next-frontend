@@ -5,18 +5,18 @@ import { useUIStore } from '@/store/useUIStore';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+import type { Mover } from '@/features/portfolio/types';
+import type { SearchResponse } from '@/features/screener/types';
 
 export function TopMovers() {
   const { watchlist } = usePortfolioStore();
   const { isAuthenticated } = useUIStore();
-  const [movers, setMovers] = useState<any[]>([]);
+  const [movers, setMovers] = useState<Mover[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated || watchlist.length === 0) {
-      setMovers([]);
-      return;
-    }
+    // Nothing to fetch; the render shows the signed-out / empty-watchlist state instead.
+    if (!isAuthenticated || watchlist.length === 0) return;
 
     const fetchMovers = async () => {
       setLoading(true);
@@ -27,16 +27,16 @@ export function TopMovers() {
             try {
               // We search for the ticker to get its orderbook ID, then get details
               // For simplicity, we just use the search endpoint which returns live prices!
-              const res = await api<any>(`stocks/search?q=${ticker}`);
-              const stock = res.hits?.find((h: any) => h.type === 'STOCK');
-              return stock ? { ticker, price: stock.price.last, change: parseFloat(stock.price.todayChangePercent.replace(',', '.')) } : null;
+              const res = await api<SearchResponse>(`stocks/search?q=${ticker}`);
+              const stock = res.hits?.find((h) => h.type === 'STOCK');
+              return stock?.price ? { ticker, price: stock.price.last ?? 0, change: parseFloat(String(stock.price.todayChangePercent ?? 0).replace(',', '.')) } : null;
             } catch {
               return null;
             }
           })
         );
         
-        const validQuotes = quotes.filter(q => q !== null).sort((a, b) => b.change - a.change);
+        const validQuotes = quotes.filter((q): q is Mover => q !== null).sort((a, b) => b.change - a.change);
         setMovers(validQuotes);
       } catch (e) {
         console.error(e);

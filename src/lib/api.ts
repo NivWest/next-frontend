@@ -23,8 +23,8 @@ export async function api<T>(endpoint: string, options: RequestInit = {}): Promi
     try {
       const errorData = await response.json();
       message = errorData.error || errorData.message || message;
-    } catch (e) {
-      // Ignored
+    } catch {
+      // Not a JSON error body; keep the generic message
     }
     throw new Error(message);
   }
