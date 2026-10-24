@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
-import type { ProfileResponse } from '@/features/auth/types';
+import { loginAsGuest as requestGuestSession } from '@/features/auth/api/auth';
+import type { ProfileResponse, UserProfile } from '@/features/auth/types';
+
+export type { UserProfile };
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -11,11 +14,6 @@ export interface Toast {
 }
 
 export type ViewType = 'Login' | 'Dashboard' | 'Watchlist' | 'Vault' | 'Settings' | 'Orders' | 'Analytics' | 'Screener' | 'Help' | 'Trade';
-
-export interface UserProfile {
-  name: string;
-  email: string;
-}
 
 export interface UIState {
   activeView: ViewType;
@@ -29,11 +27,12 @@ export interface UIState {
   removeToast: (id: string) => void;
   dismissCookieConsent: () => void;
   login: () => void;
+  loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   activeView: 'Dashboard',
   toasts: [],
   cookieConsentDismissed: false,
@@ -56,6 +55,20 @@ export const useUIStore = create<UIState>((set) => ({
   dismissCookieConsent: () => set({ cookieConsentDismissed: true }),
   
   login: () => set({ isAuthenticated: true }),
+
+  loginAsGuest: async () => {
+    try {
+      await requestGuestSession();
+      await get().checkAuth();
+      if (!get().isAuthenticated) {
+        throw new Error('Guest session was created but the profile could not be loaded');
+      }
+      set({ activeView: 'Dashboard' });
+    } catch (e) {
+      console.error('Guest login failed', e);
+      get().addToast('Could not start the demo. Please try again.', 'error');
+    }
+  },
   
   logout: async () => {
     try {
@@ -69,7 +82,7 @@ export const useUIStore = create<UIState>((set) => ({
   checkAuth: async () => {
     try {
       const data = await api<ProfileResponse>('user/profile');
-      set({ isAuthenticated: true, isAuthChecking: false, user: { name: data.name, email: data.email } });
+      set({ isAuthenticated: true, isAuthChecking: false, user: data });
     } catch {
       set({ isAuthenticated: false, isAuthChecking: false, user: null });
     }

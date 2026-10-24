@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { TryDemoButton } from './TryDemoButton';
 
 export function Login() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -15,7 +16,7 @@ export function Login() {
         
         <h1 className="text-2xl font-bold text-white mb-2">Welcome to TradeEdu</h1>
         <p className="text-[#a1a1aa] text-center mb-8 text-sm">
-          Sign in to access your portfolio, discover market trends, and practice trading risk-free.
+          Sign in to access your portfolio, discover market trends, and practice trading risk-free. Just looking around? The demo needs no account.
         </p>
 
         <a 
@@ -35,6 +36,8 @@ export function Login() {
           )}
           {isConnecting ? 'Connecting...' : 'Continue with Google'}
         </a>
+
+        <TryDemoButton className="mt-3 py-3" />
 
         <div className="w-full mt-6 flex items-center justify-center gap-2 text-xs text-[#a1a1aa]">
           <span>Protected by</span>
