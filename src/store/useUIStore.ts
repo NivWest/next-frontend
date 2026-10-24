@@ -13,16 +13,12 @@ export interface Toast {
   type: ToastType;
 }
 
-export type ViewType = 'Login' | 'Dashboard' | 'Watchlist' | 'Vault' | 'Settings' | 'Orders' | 'Analytics' | 'Screener' | 'Help' | 'Trade';
-
 export interface UIState {
-  activeView: ViewType;
   toasts: Toast[];
   cookieConsentDismissed: boolean;
   isAuthenticated: boolean;
   isAuthChecking: boolean;
   user: UserProfile | null;
-  setActiveView: (view: ViewType) => void;
   addToast: (message: string, type?: ToastType) => void;
   removeToast: (id: string) => void;
   dismissCookieConsent: () => void;
@@ -33,14 +29,11 @@ export interface UIState {
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
-  activeView: 'Dashboard',
   toasts: [],
   cookieConsentDismissed: false,
   isAuthenticated: false,
   isAuthChecking: true,
   user: null,
-  
-  setActiveView: (view) => set({ activeView: view }),
   
   addToast: (message, type = 'info') => {
     const id = Math.random().toString(36).substring(7);
@@ -63,7 +56,6 @@ export const useUIStore = create<UIState>((set, get) => ({
       if (!get().isAuthenticated) {
         throw new Error('Guest session was created but the profile could not be loaded');
       }
-      set({ activeView: 'Dashboard' });
     } catch (e) {
       console.error('Guest login failed', e);
       get().addToast('Could not start the demo. Please try again.', 'error');
@@ -76,7 +68,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     } catch (e) {
       console.error('Logout failed', e);
     }
-    set({ isAuthenticated: false, activeView: 'Dashboard', user: null });
+    set({ isAuthenticated: false, user: null });
   },
 
   checkAuth: async () => {
