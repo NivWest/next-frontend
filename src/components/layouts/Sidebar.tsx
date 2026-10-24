@@ -2,6 +2,7 @@
 
 import { LayoutDashboard, ListOrdered, BarChart3, Star, ArrowDownRight, ArrowUpRight, Filter, Settings, HelpCircle, User, Vault, LogOut } from 'lucide-react';
 import { useUIStore } from '@/store/useUIStore';
+import { TryDemoButton } from '@/features/auth/components/TryDemoButton';
 
 export function Sidebar() {
   const { activeView, setActiveView, logout, isAuthenticated, user } = useUIStore();
@@ -51,27 +52,39 @@ export function Sidebar() {
             <a href="/api/v1/auth/login" className="flex items-center justify-center gap-2 w-full py-2 bg-green-500 text-black font-semibold rounded-lg hover:bg-green-400 transition-colors">
               Sign in to TradeEdu
             </a>
+            <TryDemoButton />
           </div>
         ) : (
-          <div className="group relative flex items-center justify-between hover:bg-red-950/20 p-2 rounded-lg cursor-pointer transition-colors" onClick={handleLogout}>
-            {/* Default State */}
-            <div className="flex items-center gap-3 w-full opacity-100 group-hover:opacity-0 transition-opacity">
-              <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
-                <User size={16} className="text-zinc-400" />
+          <div className="flex items-center gap-3 p-2 rounded-lg">
+            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
+              <User size={16} className="text-zinc-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-white text-sm font-medium truncate">{user?.name || 'Trader'}</span>
+                {user?.is_guest && (
+                  <span
+                    title="Guest portfolios are deleted after 24 hours"
+                    className="shrink-0 px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-400 text-[10px] font-semibold leading-none cursor-help"
+                  >
+                    Guest
+                  </span>
+                )}
               </div>
-              <div className="overflow-hidden">
-                <div className="text-white text-sm font-medium truncate">{user?.name || 'Trader'}</div>
-                <div className="text-xs text-zinc-500 truncate">{user?.email || 'Logged in'}</div>
+              <div className="text-xs text-zinc-500 truncate">
+                {user?.is_guest ? 'Demo account' : user?.email || 'Logged in'}
               </div>
             </div>
-            
-            {/* Hover State (Logout) */}
-            <div className="absolute inset-0 flex items-center gap-3 p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
-                <LogOut size={16} className="text-red-500" />
-              </div>
-              <div className="text-sm font-medium text-red-500">Sign out</div>
-            </div>
+            {/* Only this button signs out, so clicking the name or the Guest badge never does. */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Sign out"
+              className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:bg-red-500/20 hover:text-red-500 transition-colors"
+            >
+              <LogOut size={16} aria-hidden="true" />
+              <span className="sr-only">Sign out</span>
+            </button>
           </div>
         )}
       </div>

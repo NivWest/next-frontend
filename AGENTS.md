@@ -29,6 +29,10 @@ If you are an AI agent operating in this repository, you must read the following
 
 ### Current State of the Application
 *(Agents: Update this section whenever you complete a ticket or implement a new feature. Keep it concise, highlighting newly added capabilities, architectural shifts, and current status.)*
-- **Current Status:** Initial setup / Project structure defined.
-- **Recent Updates:** 
+- **Current Status:** Google sign-in plus a guest demo login (story NW-01). Vitest + Testing Library unit tests run with `npm test`.
+- **Recent Updates:**
+  - Guest demo login: `src/features/auth/components/TryDemoButton.tsx` ("Try the demo", a `<button>`, never a link) calls `useUIStore().loginAsGuest()` (`POST /api/v1/auth/guest`, then `checkAuth`) without leaving the app; shown on the Login screen and in the Sidebar when signed out. Pending state uses `aria-busy` + `disabled`, the accessible name stays the same.
+  - Sidebar user block: name plus a "Guest" pill (`title="Guest portfolios are deleted after 24 hours"`) and "Demo account" instead of the synthetic email when `user.is_guest`. Only the separate "Sign out" button logs out.
+  - `user` in `useUIStore` is the full `UserProfile` from `src/features/auth/types.ts` (`id, name, email, role, balance, is_guest`).
+  - Tests: store auth flow in `src/store/__tests__/useUIStore.test.ts` (mocks `fetch`); component tests for Login and Sidebar drive the store with `useUIStore.setState` and `vi.fn()` actions.
   - Defined initial agent workflow and architectural guidelines.
