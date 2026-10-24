@@ -21,6 +21,8 @@ export interface SearchResponse {
 }
 
 export interface StockDetails {
+  /** Instrument name. The backend passes Avanza's stock-guide payload through untyped, so it may be absent. */
+  name?: string;
   company?: {
     description?: string;
     ceo?: string;
@@ -60,4 +62,10 @@ export function toChartPoints(res: ChartResponse): ChartPoint[] {
     const date = new Date(pt.timestamp);
     return { date: `${date.getMonth() + 1}/${date.getDate()}`, price: pt.close || pt.value || 0 };
   });
+}
+
+/** Page heading for an instrument: its name when the details carry one, otherwise `Instrument <id>`. */
+export function instrumentTitle(orderBookId: string, details?: StockDetails | null): string {
+  const name = details?.name?.trim();
+  return name || `Instrument ${orderBookId}`;
 }
