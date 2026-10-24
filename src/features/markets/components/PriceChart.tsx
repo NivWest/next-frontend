@@ -77,7 +77,7 @@ export function PriceChart({ orderbookId, currency, initialPeriod, onCandles, cl
         })}
       </div>
 
-      <div role="img" aria-label="Price chart" className="relative h-64">
+      <div className="relative h-64">
         <ChartBody current={current} currency={currency ?? 'SEK'} gradientId={gradientId} />
       </div>
     </div>
@@ -90,6 +90,11 @@ interface ChartBodyProps {
   gradientId: string;
 }
 
+/**
+ * Renders either a state message (loading, error, empty) or the chart itself. The messages stay
+ * outside the `role="img"` element: children of an img are presentational, so assistive tech would
+ * never announce them.
+ */
 function ChartBody({ current, currency, gradientId }: ChartBodyProps) {
   if (!current) {
     return (
@@ -121,24 +126,26 @@ function ChartBody({ current, currency, gradientId }: ChartBodyProps) {
   const color = change === null || change.absolute >= 0 ? POSITIVE : NEGATIVE;
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={points} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-            <stop offset="95%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <XAxis dataKey="label" hide />
-        <YAxis domain={['auto', 'auto']} hide />
-        <Tooltip
-          contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px' }}
-          itemStyle={{ color: '#fff' }}
-          formatter={(value: unknown) => [formatMoney(Number(value ?? 0), currency), 'Price']}
-          separator=": "
-        />
-        <Area type="monotone" dataKey="close" stroke={color} fillOpacity={1} fill={`url(#${gradientId})`} />
-      </AreaChart>
-    </ResponsiveContainer>
+    <div role="img" aria-label="Price chart" className="h-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={points} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <XAxis dataKey="label" hide />
+          <YAxis domain={['auto', 'auto']} hide />
+          <Tooltip
+            contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px' }}
+            itemStyle={{ color: '#fff' }}
+            formatter={(value: unknown) => [formatMoney(Number(value ?? 0), currency), 'Price']}
+            separator=": "
+          />
+          <Area type="monotone" dataKey="close" stroke={color} fillOpacity={1} fill={`url(#${gradientId})`} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
