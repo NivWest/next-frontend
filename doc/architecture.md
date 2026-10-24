@@ -46,18 +46,25 @@ The project follows a **Feature-Driven Layered Architecture**. Do **not** bloat 
 
 ```text
 src/
-├── app/                        # App Router (routing, layout, top-level composition)
-│   ├── dashboard/page.tsx      # Redirects to '/'
+├── app/                        # App Router: thin pages, one URL per screen
+│   ├── (app)/                  # Signed-in screens; layout = AuthGuard + AppShell
+│   │   └── dashboard/ orders/ watchlist/ analytics/ vault/ settings/   # one page.tsx each
+│   ├── (public)/               # Open to everyone; layout = AppShell
+│   │   ├── markets/page.tsx    # Screener, ?q= prefills the search
+│   │   ├── markets/[orderbookId]/page.tsx  # StockDetails instrument page
+│   │   └── help/page.tsx
+│   ├── login/page.tsx          # Outside both groups; honours ?next via safeNextPath
 │   ├── globals.css             # Tailwind v4 imports and theme variables
-│   ├── layout.tsx              # Root HTML layout, Geist fonts, Providers wrapper
-│   ├── page.tsx                # Main SPA dashboard shell with activeView switcher
-│   └── providers.tsx           # Client-side context providers
+│   ├── layout.tsx              # Root HTML layout, Geist fonts, title template '%s · TradeEdu', Providers
+│   ├── not-found.tsx           # "Page not found" with a link back to /dashboard
+│   ├── page.tsx                # Redirects '/' to /dashboard
+│   └── providers.tsx           # Runs checkAuth once, mounts ToastContainer
 ├── components/                 # Domain-agnostic, reusable UI elements
-│   ├── layouts/                # Global layout wrappers (e.g. Sidebar.tsx)
+│   ├── layouts/                # AppShell.tsx (sidebar + mobile drawer), Sidebar.tsx, navigation.ts (NAV_ITEMS, isNavItemActive)
 │   └── ui/                     # Shared UI components (CookieBanner.tsx, ToastContainer.tsx)
 ├── features/                   # Domain-specific feature modules
 │   ├── analytics/              # Performance metrics & asset allocation
-│   ├── auth/                   # Authentication & Google login UI
+│   ├── auth/                   # Login, guest demo, AuthGuard, safeNextPath
 │   ├── help/                   # Support center & knowledge base
 │   ├── orders/                 # Order history & fill statuses
 │   ├── portfolio/              # Dashboard widgets (KPICards, AssetChart, OrderTicket, HoldingsTable)
@@ -66,21 +73,24 @@ src/
 │   ├── vault/                  # The Vault risk-free APY simulator
 │   └── watchlist/              # User watchlist management
 ├── lib/                        # Shared utilities and network clients
-│   └── api.ts                  # Centralized fetch client (routes to /api/v1/)
+│   ├── api.ts                  # Centralized fetch client (routes to /api/v1/)
+│   └── routes.ts               # ROUTES and URL helpers (marketsSearchHref, instrumentHref, loginHref)
 └── store/                      # Cross-feature Zustand stores
     ├── usePortfolioStore.ts    # Holdings, balance, order execution, watchlists
-    └── useUIStore.ts           # Active view, auth session, toast notifications, cookie banner
+    └── useUIStore.ts           # Auth session, toast notifications, cookie banner
 ```
 
 ## 4. System Behavior & Data Flow
 
 1. **Routing Pattern:**
-   - The primary application operates as an authenticated SPA dashboard shell at `src/app/page.tsx`.
-   - Navigation between views is currently controlled via `useUIStore.activeView` (`Dashboard`, `Watchlist`, `Vault`, `Orders`, `Analytics`, `Screener`, `Settings`, `Help`, `Trade`).
-   - Route `/dashboard` issues an immediate client redirect to `/`.
+   - Every screen has its own URL; navigation is plain `next/link` / `router.push`, so the back button and deep links work. Build paths with `src/lib/routes.ts`, never hard-code them.
+   - `src/app/(app)/` holds the signed-in screens (`/dashboard`, `/orders`, `/watchlist`, `/analytics`, `/vault`, `/settings`). Its layout wraps them in the client `AuthGuard`, which shows a splash during the session check and redirects signed-out visitors to `/login?next=<current URL>`.
+   - `src/app/(public)/` holds `/markets` (`?q=` prefills the search), `/markets/[orderbookId]` (instrument page) and `/help`. Both groups render inside `AppShell` (sidebar from `md`, "Open navigation" drawer below it).
+   - `/login` lives outside both groups and, once signed in, goes to `safeNextPath(next)` (same-origin paths only, else `/dashboard`). `/` redirects to `/dashboard`; unknown URLs render `not-found.tsx`.
+   - Each `page.tsx` exports `metadata.title`; the root template renders it as `<Page> · TradeEdu`.
 2. **Authentication Flow:**
-   - On initial load, `useUIStore.checkAuth()` calls `/api/v1/user/profile`.
-   - If unauthenticated, the `Login` feature is rendered with a direct Google OAuth link to `/api/v1/auth/login`.
+   - On initial load, `Providers` calls `useUIStore.checkAuth()` once, which requests `/api/v1/user/profile`.
+   - If unauthenticated on an `(app)` route, `AuthGuard` sends the visitor to `/login`, which offers a direct Google OAuth link to `/api/v1/auth/login` and the guest demo.
    - On 401/403 responses, `src/lib/api.ts` dispatches a window event `'auth-error'` to prompt re-authentication.
 3. **Data Integration:**
    - `fetchDashboard()` loads portfolio total value, positions, and cash balance from `/api/v1/portfolio/dashboard`.
