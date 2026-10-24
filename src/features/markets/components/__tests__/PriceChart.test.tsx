@@ -39,6 +39,11 @@ function respondWith(candles: Candle[]): void {
   );
 }
 
+/** Asserts a state message is reachable by assistive tech: never inside a role="img" subtree. */
+function expectOutsideImg(element: HTMLElement): void {
+  expect(element.closest('[role="img"]')).toBeNull();
+}
+
 function periodButton(name: string): HTMLElement {
   return within(screen.getByRole("group", { name: "Chart period" })).getByRole("button", { name });
 }
@@ -110,14 +115,38 @@ describe("PriceChart", () => {
     ]);
   });
 
+  it("swaps the chart img for the loading status inside the same fixed-height wrapper", async () => {
+    const calls = deferCalls();
+    render(<PriceChart orderbookId="SIM-FJRD" />);
+
+    const wrapper = screen.getByRole("status").parentElement;
+    expect(wrapper).toHaveClass("relative", "h-64");
+
+    await act(async () => calls[0].resolve(sampleCandles));
+    const img = screen.getByRole("img", { name: "Price chart" });
+    expect(img.parentElement).toBe(wrapper);
+
+    fireEvent.click(periodButton("1W"));
+    const status = screen.getByRole("status");
+    expect(status.parentElement).toBe(wrapper);
+    expectOutsideImg(status);
+    expect(screen.queryByRole("img", { name: "Price chart" })).not.toBeInTheDocument();
+
+    await act(async () => calls[1].resolve(sampleCandles));
+    expect(screen.getByRole("img", { name: "Price chart" }).parentElement).toBe(wrapper);
+  });
+
   it("shows a loading status until candles arrive", async () => {
     const calls = deferCalls();
     render(<PriceChart orderbookId="SIM-FJRD" />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Loading chart…");
-    expect(screen.getByRole("img", { name: "Price chart" })).toBeInTheDocument();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Loading chart…");
+    expectOutsideImg(status);
+    expect(screen.queryByRole("img", { name: "Price chart" })).not.toBeInTheDocument();
 
     await act(async () => calls[0].resolve(sampleCandles));
+    expect(screen.getByRole("img", { name: "Price chart" })).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -129,7 +158,10 @@ describe("PriceChart", () => {
     const onCandles = vi.fn();
     render(<PriceChart orderbookId="SIM-FJRD" onCandles={onCandles} />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Price data is unavailable right now.");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Price data is unavailable right now.");
+    expectOutsideImg(alert);
+    expect(screen.queryByRole("img", { name: "Price chart" })).not.toBeInTheDocument();
     expect(onCandles).not.toHaveBeenCalled();
 
     const button = periodButton("1W");
@@ -138,6 +170,7 @@ describe("PriceChart", () => {
     expect(getCandlesMock).toHaveBeenLastCalledWith("SIM-FJRD", "1w");
     await act(async () => {});
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Price chart" })).toBeInTheDocument();
     expect(onCandles).toHaveBeenCalledWith(sampleCandles, "1w");
   });
 
@@ -146,7 +179,9 @@ describe("PriceChart", () => {
     const onCandles = vi.fn();
     render(<PriceChart orderbookId="SIM-FJRD" onCandles={onCandles} />);
 
-    expect(await screen.findByText("No price data for this period.")).toBeInTheDocument();
+    const empty = await screen.findByText("No price data for this period.");
+    expectOutsideImg(empty);
+    expect(screen.queryByRole("img", { name: "Price chart" })).not.toBeInTheDocument();
     expect(onCandles).toHaveBeenCalledWith([], "1m");
     expect(periodButton("1Y")).toBeEnabled();
   });
@@ -164,6 +199,7 @@ describe("PriceChart", () => {
 
     await act(async () => calls[0].resolve(sampleCandles));
     expect(screen.getByText("No price data for this period.")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Price chart" })).not.toBeInTheDocument();
     expect(onCandles.mock.calls).toEqual([[[], "1y"]]);
   });
 
@@ -191,6 +227,7 @@ describe("PriceChart", () => {
 
     await act(async () => calls[0].resolve(sampleCandles));
     expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Price chart" })).not.toBeInTheDocument();
     expect(onCandles).not.toHaveBeenCalled();
 
     await act(async () => calls[1].resolve([]));
