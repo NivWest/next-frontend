@@ -7,6 +7,7 @@ import { formatMoney, formatPercent } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
+import { OrderTicket } from '@/features/trading/components/OrderTicket';
 import { getInstrumentDetails, getQuote } from '../api/market';
 import {
   DEFAULT_CANDLE_PERIOD,
@@ -53,7 +54,7 @@ function changeClass(value: number): string {
   return 'text-[#a1a1aa]';
 }
 
-/** Public instrument page at `/markets/<orderbookId>`: quote, price chart, company overview and key indicators. */
+/** Public instrument page at `/markets/<orderbookId>`: quote, order ticket, price chart, company overview and key indicators. */
 export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
   const [result, setResult] = useState<LoadResult | null>(null);
   const { addToWatchlist } = usePortfolioStore();
@@ -173,6 +174,8 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
           </p>
         </section>
 
+        <OrderTicket orderbookId={orderbookId} />
+
         <PriceChart orderbookId={orderbookId} currency={currency} initialPeriod={DEFAULT_CANDLE_PERIOD} />
 
         <div className="flex gap-3">
@@ -182,13 +185,6 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
             className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-3 rounded-lg transition-colors"
           >
             Add to Watchlist
-          </button>
-          <button
-            type="button"
-            className="flex-1 bg-green-500 hover:bg-green-400 text-black font-medium py-3 rounded-lg transition-colors"
-            onClick={() => addToast('Trading features coming soon', 'info')}
-          >
-            Trade Asset
           </button>
         </div>
 

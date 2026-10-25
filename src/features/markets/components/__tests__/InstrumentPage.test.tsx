@@ -26,6 +26,18 @@ vi.mock("../PriceChart", () => ({
   },
 }));
 
+const orderTicketProps = vi.fn<(props: { orderbookId: string }) => void>();
+vi.mock("@/features/trading/components/OrderTicket", () => ({
+  OrderTicket: (props: { orderbookId: string }) => {
+    orderTicketProps(props);
+    return (
+      <section aria-labelledby="order-ticket-heading">
+        <h2 id="order-ticket-heading">Order ticket</h2>
+      </section>
+    );
+  },
+}));
+
 function fjordDetails(overrides: Partial<InstrumentDetails> = {}): InstrumentDetails {
   return {
     orderbook_id: "SIM-FJRD",
@@ -71,6 +83,7 @@ describe("InstrumentPage", () => {
     getDetailsMock.mockReset();
     getQuoteMock.mockReset();
     priceChartProps.mockReset();
+    orderTicketProps.mockReset();
     addToWatchlist.mockReset();
     addToast.mockReset();
     getDetailsMock.mockResolvedValue(fjordDetails());
@@ -131,6 +144,29 @@ describe("InstrumentPage", () => {
 
     expect(await screen.findByRole("img", { name: "Price chart" })).toBeInTheDocument();
     expect(priceChartProps).toHaveBeenLastCalledWith({ orderbookId: "SIM-FJRD", currency: "SEK", initialPeriod: "1m" });
+  });
+
+  it("renders the order ticket between the quote and the price chart, without the Trade Asset placeholder", async () => {
+    render(<InstrumentPage orderbookId="SIM-FJRD" />);
+
+    const ticket = await screen.findByRole("region", { name: "Order ticket" });
+    expect(orderTicketProps).toHaveBeenLastCalledWith({ orderbookId: "SIM-FJRD" });
+    const quote = screen.getByRole("region", { name: "Quote" });
+    const chart = screen.getByRole("img", { name: "Price chart" });
+    expect(quote.compareDocumentPosition(ticket) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(ticket.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Trade Asset" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to Watchlist" })).toBeInTheDocument();
+  });
+
+  it("does not render the order ticket while loading or on error", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    getDetailsMock.mockRejectedValue(new Error("instrument not found"));
+    render(<InstrumentPage orderbookId="SIM-NOPE" />);
+
+    expect(screen.queryByRole("region", { name: "Order ticket" })).not.toBeInTheDocument();
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("region", { name: "Order ticket" })).not.toBeInTheDocument();
   });
 
   it("formats the key indicators and the company overview", async () => {
