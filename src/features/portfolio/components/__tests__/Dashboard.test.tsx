@@ -37,6 +37,15 @@ describe('Dashboard', () => {
     expect(screen.queryByText(/Aug 3 - Aug 9, 2026/)).toBeNull();
   });
 
+  it('has no order ticket; trading happens on the instrument page', () => {
+    render(<Dashboard />);
+
+    expect(screen.queryByRole('heading', { name: /order ticket/i })).toBeNull();
+    expect(screen.queryByText(/NVDA/)).toBeNull();
+    expect(screen.queryByText(/NVIDIA/)).toBeNull();
+    expect(screen.getByTestId('top-movers')).toBeInTheDocument();
+  });
+
   it('loads the dashboard when the user is signed in', () => {
     useUIStore.setState({ isAuthenticated: true });
 

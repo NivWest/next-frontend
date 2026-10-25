@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 import { KPICards } from '@/features/portfolio/components/KPICards';
 import { AssetChart } from '@/features/portfolio/components/AssetChart';
-import { OrderTicket } from '@/features/portfolio/components/OrderTicket';
 import { TopMovers } from '@/features/portfolio/components/TopMovers';
 import { HoldingsTable } from '@/features/portfolio/components/HoldingsTable';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
@@ -32,11 +31,8 @@ export function Dashboard() {
           <AssetChart />
         </div>
 
-        <div className="flex flex-col h-full gap-6">
-          <OrderTicket />
-          <div className="flex-1 min-h-0">
-            <TopMovers />
-          </div>
+        <div className="min-h-[400px]">
+          <TopMovers />
         </div>
       </div>
 
