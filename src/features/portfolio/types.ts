@@ -19,8 +19,10 @@ export interface DashboardResponse {
   top_movers: DashboardPosition[] | null;
 }
 
+/** One watchlist row in TopMovers: `price` in `currency`, `change` in percent (1.25 means +1.25%). */
 export interface Mover {
   ticker: string;
   price: number;
   change: number;
+  currency: string;
 }

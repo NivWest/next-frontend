@@ -1,15 +1,15 @@
 import type { Metadata } from 'next';
-import { StockDetails } from '@/features/screener/components/StockDetails';
+import { InstrumentPage } from '@/features/markets/components/InstrumentPage';
 
 export const metadata: Metadata = {
   title: 'Instrument',
 };
 
-interface InstrumentPageProps {
+interface InstrumentRouteProps {
   params: Promise<{ orderbookId: string }>;
 }
 
-export default async function InstrumentPage({ params }: InstrumentPageProps) {
+export default async function InstrumentRoute({ params }: InstrumentRouteProps) {
   const { orderbookId } = await params;
-  return <StockDetails orderBookId={orderbookId} />;
+  return <InstrumentPage orderbookId={orderbookId} />;
 }
