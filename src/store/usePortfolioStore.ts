@@ -22,7 +22,6 @@ interface PortfolioState {
   watchlistId: number | null;
   fetchDashboard: () => Promise<void>;
   fetchWatchlists: () => Promise<void>;
-  executeTrade: (ticker: string, name: string, shares: number, type: 'BUY' | 'SELL') => Promise<void>;
   addToWatchlist: (ticker: string, name?: string) => Promise<void>;
   removeFromWatchlist: (stockId: string) => Promise<void>;
 }
@@ -61,21 +60,6 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     } catch (e) {
       console.error('Failed to fetch dashboard', e);
     }
-  },
-
-  executeTrade: async (ticker, name, shares, type) => {
-    await api('orders', {
-      method: 'POST',
-      body: JSON.stringify({
-        symbol: ticker,
-        name: name,
-        type: type,
-        quantity: shares
-      })
-    });
-    
-    // Refresh dashboard after trade
-    await get().fetchDashboard();
   },
 
   fetchWatchlists: async () => {
