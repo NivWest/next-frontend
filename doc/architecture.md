@@ -20,7 +20,7 @@
 
 ### User Tiers
 - **Tier 1 — Public Explorer (Unauthenticated):** Instrument search, quotes (last, bid, ask), key indicators (P/E, dividend yield, market cap) and price charts from the backend's `/api/v1/market` API (Avanza or the simulated market).
-- **Tier 2 — Registered Trader (Authenticated):** Automatic provisioning of $100,000 virtual capital, custom watchlists, portfolio analytics, order execution (Market, Limit, Stop-Loss), and The Vault.
+- **Tier 2 — Registered Trader (Authenticated):** Automatic provisioning of 100,000 SEK virtual capital, custom watchlists, portfolio analytics, order execution (Market, Limit, Stop-Loss), and The Vault.
 
 ---
 
@@ -69,16 +69,18 @@ src/
 │   ├── markets/                # Market data: api/market.ts, types.ts (mirror backend api/openapi.yaml), candles.ts,
 │   │                           #   MarketSearch, InstrumentPage, PriceChart, SimulatedBadge
 │   ├── orders/                 # Order history & fill statuses
-│   ├── portfolio/              # Dashboard widgets (KPICards, AssetChart, OrderTicket, HoldingsTable)
+│   ├── portfolio/              # Dashboard widgets (KPICards, AssetChart, HoldingsTable, TopMovers)
 │   ├── settings/               # Profile & GDPR Right to Erasure
+│   ├── trading/                # Order execution: types.ts (mirrors backend api/openapi.yaml), preview.ts (previewOrder,
+│   │                           #   mirrors backend pricing), api/orders.ts (placeOrder, newIdempotencyKey), OrderTicket
 │   ├── vault/                  # The Vault risk-free APY simulator
 │   └── watchlist/              # User watchlist management
 ├── lib/                        # Shared utilities and network clients
-│   ├── api.ts                  # Centralized fetch client (routes to /api/v1/)
+│   ├── api.ts                  # Centralized fetch client (routes to /api/v1/), rejects with ApiRequestError {status, code}
 │   ├── format.ts               # formatMoney ('100,000.00 SEK'), formatPercent ('+1.25%')
 │   └── routes.ts               # ROUTES and URL helpers (marketsSearchHref, instrumentHref, loginHref)
 └── store/                      # Cross-feature Zustand stores
-    ├── usePortfolioStore.ts    # Holdings, balance, order execution, watchlists
+    ├── usePortfolioStore.ts    # Holdings, balance, watchlists
     └── useUIStore.ts           # Auth session, toast notifications, cookie banner
 ```
 
@@ -96,7 +98,7 @@ src/
    - On 401/403 responses, `src/lib/api.ts` dispatches a window event `'auth-error'` to prompt re-authentication.
 3. **Data Integration:**
    - `fetchDashboard()` loads portfolio total value, positions, and cash balance from `/api/v1/portfolio/dashboard`.
-   - `executeTrade()` posts order payloads to `/api/v1/orders/` and refreshes portfolio state.
+   - `OrderTicket` (on `InstrumentPage`) polls `/api/v1/market/instruments/{id}/quote` every 5 s, previews price, commission and total with `previewOrder()`, and submits through `placeOrder()`: `POST /api/v1/orders` with a fresh `Idempotency-Key` header per submit (a retry with the same key replays the original order). On success it calls `useUIStore.checkAuth()` so the profile balance (`Cash available`) updates; errors arrive as `ApiRequestError` and are mapped by `code`.
    - Market data goes through `src/features/markets/api/market.ts`; the backend serves either Avanza or the deterministic simulated market, selected by `MARKET_DATA_PROVIDER`.
    - `MarketSearch` searches `/api/v1/market/instruments?q=...`; `TopMovers` uses the same search to look up watchlist tickers.
    - `InstrumentPage` loads `/api/v1/market/instruments/{id}` (details + key indicators) and `/api/v1/market/instruments/{id}/quote`.
