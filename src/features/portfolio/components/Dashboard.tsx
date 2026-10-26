@@ -9,14 +9,14 @@ import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
 
 export function Dashboard() {
-  const { fetchDashboard } = usePortfolioStore();
+  const fetchPortfolio = usePortfolioStore((state) => state.fetchPortfolio);
   const { isAuthenticated } = useUIStore();
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchDashboard();
+      void fetchPortfolio();
     }
-  }, [fetchDashboard, isAuthenticated]);
+  }, [fetchPortfolio, isAuthenticated]);
 
   return (
     <div className="max-w-7xl mx-auto">
