@@ -35,29 +35,6 @@ export interface Portfolio {
   top_movers: PortfolioPosition[];
 }
 
-/**
- * @deprecated GET /portfolio/dashboard is removed in NW-05; use `Portfolio`. Deleted once the store moves over.
- */
-export interface DashboardPosition {
-  stock_name: string;
-  symbol: string;
-  quantity: number;
-  avg_price: number;
-  current_price: number;
-  change_percent: number;
-  value: number;
-  weight: number;
-}
-
-/** @deprecated See `DashboardPosition`. */
-export interface DashboardResponse {
-  balance: number;
-  total_value: number;
-  total_unrealized: number;
-  positions: DashboardPosition[] | null;
-  top_movers: DashboardPosition[] | null;
-}
-
 /** @deprecated Watchlist-based movers; TopMovers moves to `Portfolio.top_movers` in NW-05. */
 export interface Mover {
   ticker: string;
