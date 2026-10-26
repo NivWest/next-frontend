@@ -16,12 +16,12 @@ vi.mock('../TopMovers', () => ({
 const initialPortfolio = usePortfolioStore.getState();
 const initialUI = useUIStore.getState();
 
-let fetchDashboard: Mock<() => Promise<void>>;
+let fetchPortfolio: Mock<() => Promise<void>>;
 
 describe('Dashboard', () => {
   beforeEach(() => {
-    fetchDashboard = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-    usePortfolioStore.setState({ fetchDashboard });
+    fetchPortfolio = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    usePortfolioStore.setState({ fetchPortfolio });
   });
 
   afterEach(() => {
@@ -46,19 +46,42 @@ describe('Dashboard', () => {
     expect(screen.getByTestId('top-movers')).toBeInTheDocument();
   });
 
-  it('loads the dashboard when the user is signed in', () => {
+  it('loads the portfolio when the user is signed in', () => {
     useUIStore.setState({ isAuthenticated: true });
 
     render(<Dashboard />);
 
-    expect(fetchDashboard).toHaveBeenCalledTimes(1);
+    expect(fetchPortfolio).toHaveBeenCalledTimes(1);
   });
 
-  it('does not load the dashboard when signed out', () => {
+  it('does not load the portfolio when signed out', () => {
     useUIStore.setState({ isAuthenticated: false });
 
     render(<Dashboard />);
 
-    expect(fetchDashboard).not.toHaveBeenCalled();
+    expect(fetchPortfolio).not.toHaveBeenCalled();
+  });
+
+  it('renders the KPI cards and holdings from the loaded portfolio', () => {
+    useUIStore.setState({ isAuthenticated: true });
+    usePortfolioStore.setState({
+      portfolio: {
+        cash: 100000,
+        holdings_value: 0,
+        total_equity: 100000,
+        unrealized_pnl: 0,
+        realized_pnl: 0,
+        positions: [],
+        top_movers: [],
+      },
+      portfolioStatus: 'ready',
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByRole('group', { name: 'Total equity' })).toHaveTextContent('100,000.00 SEK');
+    expect(screen.getByRole('group', { name: 'Cash' })).toHaveTextContent('100,000.00 SEK');
+    expect(screen.getByText('No positions yet')).toBeInTheDocument();
+    expect(screen.getByTestId('asset-chart')).toBeInTheDocument();
   });
 });

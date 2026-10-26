@@ -4,7 +4,7 @@ import { BarChart3, TrendingUp, Activity } from 'lucide-react';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 
 export function Analytics() {
-  const { portfolioValue } = usePortfolioStore();
+  const totalEquity = usePortfolioStore((state) => state.portfolio?.total_equity ?? 0);
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -48,7 +48,7 @@ export function Analytics() {
               
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-[#a1a1aa] text-xs">Total</span>
-                <span className="text-white font-bold text-sm">${(portfolioValue / 1000).toFixed(1)}k</span>
+                <span className="text-white font-bold text-sm">{(totalEquity / 1000).toFixed(1)}k SEK</span>
               </div>
             </div>
             <div className="flex justify-center gap-6 mt-6">
