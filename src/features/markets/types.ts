@@ -90,5 +90,3 @@ export function isSimulatedInstrument(orderbookId: string): boolean {
   return orderbookId.startsWith(SIMULATED_ID_PREFIX);
 }
 
-/** Instrument charted by the dashboard's AssetChart until portfolios pick their own (NW-05). */
-export const DEFAULT_CHART_INSTRUMENT = 'SIM-FJRD';

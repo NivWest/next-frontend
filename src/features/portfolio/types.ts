@@ -35,10 +35,3 @@ export interface Portfolio {
   top_movers: PortfolioPosition[];
 }
 
-/** @deprecated Watchlist-based movers; TopMovers moves to `Portfolio.top_movers` in NW-05. */
-export interface Mover {
-  ticker: string;
-  price: number;
-  change: number;
-  currency: string;
-}
