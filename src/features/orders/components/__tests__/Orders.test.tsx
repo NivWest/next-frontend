@@ -1,0 +1,211 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiRequestError } from '@/lib/api';
+import type { ListOrdersParams, Order, OrderPage } from '../../types';
+import { Orders } from '../Orders';
+
+const mocks = vi.hoisted(() => ({
+  listOrders: vi.fn<(params?: ListOrdersParams) => Promise<OrderPage>>(),
+}));
+
+vi.mock('../../api/orders', () => ({
+  listOrders: (params?: ListOrdersParams) => mocks.listOrders(params),
+}));
+
+function order(overrides: Partial<Order> = {}): Order {
+  return {
+    id: 43,
+    orderbook_id: 'SIM-NVE',
+    symbol: 'NVE',
+    name: 'Nordvik Energy',
+    side: 'BUY',
+    type: 'MARKET',
+    status: 'FILLED',
+    quantity: 10,
+    fill_price: 100.1,
+    commission: 2.5,
+    total: 1003.5,
+    created_at: '2026-10-26T09:42:00Z',
+    filled_at: '2026-10-26T09:42:00Z',
+    ...overrides,
+  };
+}
+
+function page(items: Order[], nextCursor: string | null = null): OrderPage {
+  return { items, next_cursor: nextCursor };
+}
+
+/** A promise plus its resolve, to hold a request open. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+async function findTable(): Promise<HTMLElement> {
+  return screen.findByRole('table', { name: 'Order history' });
+}
+
+function bodyRows(table: HTMLElement): HTMLElement[] {
+  return within(table).getAllByRole('row').slice(1);
+}
+
+describe('Orders', () => {
+  beforeEach(() => {
+    mocks.listOrders.mockReset();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('shows a loading status, then the Order history table with the columns in order', async () => {
+    mocks.listOrders.mockResolvedValue(page([order()]));
+    render(<Orders />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Orders' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading orders…');
+
+    const table = await findTable();
+    const headers = within(table).getAllByRole('columnheader');
+    expect(headers.map((h) => h.textContent)).toEqual([
+      'Instrument',
+      'Side',
+      'Qty',
+      'Price',
+      'Commission',
+      'Total',
+      'Status',
+      'Time',
+    ]);
+    headers.forEach((h) => expect(h).toHaveAttribute('scope', 'col'));
+    expect(mocks.listOrders).toHaveBeenCalledTimes(1);
+    expect(mocks.listOrders).toHaveBeenCalledWith({ limit: 20 });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('renders an order row with an instrument link, labels and formatted values', async () => {
+    mocks.listOrders.mockResolvedValue(page([order({ side: 'SELL', quantity: 2.5 })]));
+    render(<Orders />);
+
+    const table = await findTable();
+    const [row] = bodyRows(table);
+    const link = within(row).getByRole('link', { name: 'Nordvik Energy' });
+    expect(link).toHaveAttribute('href', '/markets/SIM-NVE');
+
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[0]).toHaveTextContent('NVE');
+    expect(cells[1]).toHaveTextContent('Sell');
+    expect(cells[1]).toHaveClass('text-red-500');
+    expect(cells[2]).toHaveTextContent('2.5');
+    expect(cells[3]).toHaveTextContent('100.10 SEK');
+    expect(cells[4]).toHaveTextContent('2.50 SEK');
+    expect(cells[5]).toHaveTextContent('1,003.50 SEK');
+    expect(cells[6]).toHaveTextContent('Filled');
+    const time = cells[7].querySelector('time');
+    expect(time).toHaveAttribute('dateTime', '2026-10-26T09:42:00Z');
+    expect(time?.textContent).not.toBe('');
+  });
+
+  it('colours Buy green', async () => {
+    mocks.listOrders.mockResolvedValue(page([order({ side: 'BUY' })]));
+    render(<Orders />);
+
+    const [row] = bodyRows(await findTable());
+    const side = within(row).getByText('Buy');
+    expect(side).toHaveClass('text-green-500');
+  });
+
+  it('shows the empty state with a link to the markets when there are no orders', async () => {
+    mocks.listOrders.mockResolvedValue(page([]));
+    render(<Orders />);
+
+    expect(await screen.findByText('No orders yet')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Browse markets' })).toHaveAttribute('href', '/markets');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+  });
+
+  it('hides Load more when the first page is the last one', async () => {
+    mocks.listOrders.mockResolvedValue(page([order()], null));
+    render(<Orders />);
+
+    await findTable();
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+  });
+
+  it('Load more appends the next page and disappears on the last page', async () => {
+    const second = deferred<OrderPage>();
+    mocks.listOrders
+      .mockResolvedValueOnce(page([order({ id: 3, name: 'Nordvik Energy' })], 'cursor-1'))
+      .mockReturnValueOnce(second.promise)
+      .mockResolvedValueOnce(page([order({ id: 1, orderbook_id: 'SIM-FJRD', symbol: 'FJRD', name: 'Fjord Robotics' })]));
+    render(<Orders />);
+
+    const table = await findTable();
+    expect(bodyRows(table)).toHaveLength(1);
+
+    const button = screen.getByRole('button', { name: 'Load more' });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+
+    expect(mocks.listOrders).toHaveBeenLastCalledWith({ limit: 20, cursor: 'cursor-1' });
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Load more' })).toHaveAttribute('aria-busy', 'true');
+
+    second.resolve(page([order({ id: 2, orderbook_id: 'SIM-AUR', symbol: 'AUR', name: 'Aurora Bank' })], 'cursor-2'));
+
+    await waitFor(() => expect(bodyRows(table)).toHaveLength(2));
+    expect(within(bodyRows(table)[0]).getByRole('link')).toHaveTextContent('Nordvik Energy');
+    expect(within(bodyRows(table)[1]).getByRole('link')).toHaveTextContent('Aurora Bank');
+    const again = screen.getByRole('button', { name: 'Load more' });
+    expect(again).toBeEnabled();
+    expect(again).toHaveAttribute('aria-busy', 'false');
+
+    fireEvent.click(again);
+    expect(mocks.listOrders).toHaveBeenLastCalledWith({ limit: 20, cursor: 'cursor-2' });
+
+    await waitFor(() => expect(bodyRows(table)).toHaveLength(3));
+    expect(within(bodyRows(table)[2]).getByRole('link', { name: 'Fjord Robotics' })).toHaveAttribute(
+      'href',
+      '/markets/SIM-FJRD',
+    );
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+    expect(mocks.listOrders).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps the loaded rows and Load more when a further page fails', async () => {
+    mocks.listOrders
+      .mockResolvedValueOnce(page([order()], 'cursor-1'))
+      .mockRejectedValueOnce(new ApiRequestError('boom', 500, null));
+    render(<Orders />);
+
+    const table = await findTable();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load more orders');
+    expect(bodyRows(table)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled();
+  });
+
+  it('shows an error with Retry, and Retry loads the first page again', async () => {
+    mocks.listOrders
+      .mockRejectedValueOnce(new ApiRequestError('Internal error', 500, null))
+      .mockResolvedValueOnce(page([order()]));
+    render(<Orders />);
+
+    const alert = await screen.findByRole('alert');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading orders…');
+    const table = await findTable();
+    expect(bodyRows(table)).toHaveLength(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mocks.listOrders).toHaveBeenCalledTimes(2);
+    expect(mocks.listOrders).toHaveBeenLastCalledWith({ limit: 20 });
+  });
+});
