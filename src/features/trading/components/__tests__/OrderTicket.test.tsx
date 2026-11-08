@@ -49,9 +49,12 @@ function filledOrder(overrides: Partial<Order> = {}): Order {
     type: 'MARKET',
     status: 'FILLED',
     quantity: 10,
+    limit_price: null,
+    stop_price: null,
     fill_price: 100.1,
     commission: 2.5,
     total: 1003.5,
+    reject_reason: null,
     created_at: '2026-10-25T12:00:00Z',
     filled_at: '2026-10-25T12:00:00Z',
     ...overrides,
@@ -65,6 +68,7 @@ const trader: UserProfile = {
   role: 'member',
   balance: 100000,
   is_guest: false,
+  leaderboard_opt_in: false,
 };
 
 const initialState = useUIStore.getState();
@@ -405,5 +409,81 @@ describe('OrderTicket', () => {
 
     expect(screen.getByRole('button', { name: 'Buy FJRD' })).toBeInTheDocument();
     expect(previewValue('Price')).toBe('100.10 SEK');
+  });
+
+  it('AC7: switches to Limit tab, previews reservation and toasts "Limit order placed" on submit', async () => {
+    signIn();
+    mocks.placeOrder.mockResolvedValue(filledOrder({ type: 'LIMIT', limit_price: 95, status: 'OPEN' }));
+    render(<OrderTicket orderbookId="SIM-FJRD" />);
+    await screen.findByRole('button', { name: 'Buy FJRD' });
+
+    // Switch to Limit tab
+    const limitTab = screen.getByRole('tab', { name: 'Limit' });
+    expect(limitTab).toHaveAttribute('aria-selected', 'false');
+    fireEvent.click(limitTab);
+    expect(limitTab).toHaveAttribute('aria-selected', 'true');
+
+    // Limit price input is visible
+    const limitInput = screen.getByLabelText('Limit price');
+    expect(limitInput).toHaveValue(null);
+    expect(previewValue('Reserved amount')).toBe('—');
+    expect(screen.getByRole('button', { name: 'Buy FJRD' })).toBeDisabled();
+
+    // Enter quantity and limit price: BUY 10 @ 95 -> reserved amount 952.38 SEK (AC1)
+    enterQuantity('10');
+    fireEvent.change(limitInput, { target: { value: '95' } });
+
+    expect(previewValue('Limit price')).toBe('95.00 SEK');
+    expect(previewValue('Reserved amount')).toBe('952.38 SEK');
+    const submit = screen.getByRole('button', { name: 'Buy FJRD' });
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('Limit order placed', 'success'));
+    expect(mocks.placeOrder).toHaveBeenCalledWith(
+      { orderbook_id: 'SIM-FJRD', side: 'BUY', type: 'LIMIT', quantity: 10, limit_price: 95 },
+      'key-1',
+    );
+  });
+
+  it('switches to Stop tab, previews reservation and toasts "Stop order placed" on submit', async () => {
+    signIn();
+    mocks.placeOrder.mockResolvedValue(filledOrder({ type: 'STOP', stop_price: 90, status: 'OPEN' }));
+    render(<OrderTicket orderbookId="SIM-FJRD" />);
+    await screen.findByRole('button', { name: 'Buy FJRD' });
+
+    // Switch to Stop tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Stop' }));
+    const stopInput = screen.getByLabelText('Stop price');
+
+    // BUY 10 @ stop 90 -> reserves at 94.50 = 947.36 SEK
+    enterQuantity('10');
+    fireEvent.change(stopInput, { target: { value: '90' } });
+
+    expect(previewValue('Stop price')).toBe('90.00 SEK');
+    expect(previewValue('Reserved amount')).toBe('947.36 SEK');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Buy FJRD' }));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith('Stop order placed', 'success'));
+    expect(mocks.placeOrder).toHaveBeenCalledWith(
+      { orderbook_id: 'SIM-FJRD', side: 'BUY', type: 'STOP', quantity: 10, stop_price: 90 },
+      'key-1',
+    );
+  });
+
+  it('SELL LIMIT reserves shares instead of cash', async () => {
+    signIn();
+    render(<OrderTicket orderbookId="SIM-FJRD" />);
+    await screen.findByRole('button', { name: 'Buy FJRD' });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Limit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sell' }));
+    enterQuantity('10');
+    fireEvent.change(screen.getByLabelText('Limit price'), { target: { value: '95' } });
+
+    expect(previewValue('Reserved amount')).toBe('10 shares');
+    expect(screen.getByRole('button', { name: 'Sell FJRD' })).toBeEnabled();
   });
 });
