@@ -2,11 +2,11 @@
 
 import { Activity, ListOrdered } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import type { OrderSide, OrderStatus } from '@/features/trading/types';
+import { useEffect, useId, useRef, useState } from 'react';
+import { MAX_ORDER_NOTE_LENGTH, type OrderSide, type OrderStatus } from '@/features/trading/types';
 import { instrumentHref, ROUTES } from '@/lib/routes';
 import { useUIStore } from '@/store/useUIStore';
-import { cancelOrder, listOrders } from '../api/orders';
+import { cancelOrder, listOrders, updateOrderNote } from '../api/orders';
 import { formatOrderMoney, formatOrderTime, formatQuantity, sideLabel, statusLabel, typeLabel } from '../format';
 import type { Order } from '../types';
 
@@ -37,13 +37,92 @@ const STATUS_CLASSES: Record<OrderStatus, string> = {
 const WRAPPER_CLASS = 'max-w-5xl mx-auto p-4 md:p-6 pb-48 md:pb-48';
 
 function HistoryRow({ order }: { order: Order }) {
+  const noteInputId = useId();
+  const [note, setNote] = useState(order.note ?? '');
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(order.note ?? '');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function handleSaveNote() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await updateOrderNote(order.id, draft.trim());
+      setNote(updated.note ?? draft.trim());
+      setIsEditing(false);
+    } catch {
+      setSaveError('Could not save note.');
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
-    <tr className="hover:bg-[#111111] transition-colors">
+    <tr id={`order-${order.id}`} className="hover:bg-[#111111] transition-colors">
       <td className="px-4 py-3">
         <Link href={instrumentHref(order.orderbook_id)} className="font-medium text-white hover:underline">
           {order.name}
         </Link>
         <span className="block text-xs text-[#71717a]">{order.symbol}</span>
+        {!isEditing ? (
+          <div className="mt-1">
+            {note && <p className="text-xs text-[#a1a1aa] break-words">{note}</p>}
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(note);
+                setSaveError(null);
+                setIsEditing(true);
+              }}
+              aria-label={note ? `Edit note for order ${order.id}` : `Add note for order ${order.id}`}
+              className="mt-0.5 text-xs text-[#71717a] hover:text-white underline transition-colors"
+            >
+              {note ? 'Edit note' : 'Add note'}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-2 space-y-1.5">
+            <label htmlFor={noteInputId} className="sr-only">
+              Note for order {order.id}
+            </label>
+            <input
+              id={noteInputId}
+              type="text"
+              maxLength={MAX_ORDER_NOTE_LENGTH}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="w-full bg-[#111111] border border-[#27272a] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#a1a1aa]"
+            />
+            {saveError && (
+              <p role="alert" className="text-xs text-red-500">
+                {saveError}
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSaveNote}
+                disabled={saving}
+                aria-busy={saving}
+                className="px-2 py-0.5 rounded bg-green-500 text-black text-xs font-medium hover:bg-green-400 disabled:opacity-50"
+              >
+                Save note
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditing(false);
+                  setSaveError(null);
+                }}
+                disabled={saving}
+                className="px-2 py-0.5 rounded border border-[#27272a] text-xs text-[#a1a1aa] hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </td>
       <td className={`px-4 py-3 font-medium ${SIDE_CLASSES[order.side]}`}>{sideLabel(order.side)}</td>
       <td className="px-4 py-3 text-right text-white tabular-nums">{formatQuantity(order.quantity)}</td>

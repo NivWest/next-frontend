@@ -1,8 +1,9 @@
-// Order history (story NW-05). OrderPage is generated from backend api/openapi.yaml (`npm run api:gen`).
+// Order history (story NW-05) and order thesis notes (story NW-17).
+// OrderPage and OrderNoteRequest are generated from backend api/openapi.yaml (`npm run api:gen`).
 import type { Schemas } from '@/lib/api';
-import type { Order, OrderStatus } from '@/features/trading/types';
+import type { Order, OrderNoteRequest, OrderStatus } from '@/features/trading/types';
 
-export type { Order };
+export type { Order, OrderNoteRequest, OrderStatus };
 
 /** Body of GET /api/v1/orders: newest first; `next_cursor` is null on the last page. */
 export type OrderPage = Schemas['OrderPage'];

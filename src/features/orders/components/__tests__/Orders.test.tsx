@@ -8,11 +8,13 @@ import { Orders } from '../Orders';
 
 const mocks = vi.hoisted(() => ({
   listOrders: vi.fn<(params?: ListOrdersParams) => Promise<OrderPage>>(),
+  updateOrderNote: vi.fn<(id: number, note: string) => Promise<Order>>(),
   cancelOrder: vi.fn<(id: number) => Promise<Order>>(),
 }));
 
 vi.mock('../../api/orders', () => ({
   listOrders: (params?: ListOrdersParams) => mocks.listOrders(params),
+  updateOrderNote: (id: number, note: string) => mocks.updateOrderNote(id, note),
   cancelOrder: (id: number) => mocks.cancelOrder(id),
 }));
 
@@ -32,6 +34,7 @@ function order(overrides: Partial<Order> = {}): Order {
     commission: 2.5,
     total: 1003.5,
     reject_reason: null,
+    note: '',
     created_at: '2026-10-26T09:42:00Z',
     filled_at: '2026-10-26T09:42:00Z',
     ...overrides,
@@ -65,6 +68,7 @@ let addToast: Mock<(message: string, type?: 'success' | 'error' | 'info') => voi
 describe('Orders', () => {
   beforeEach(() => {
     mocks.listOrders.mockReset();
+    mocks.updateOrderNote.mockReset();
     mocks.cancelOrder.mockReset();
     addToast = vi.fn();
     useUIStore.setState({ ...initialState, addToast });
@@ -222,6 +226,28 @@ describe('Orders', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(mocks.listOrders).toHaveBeenCalledTimes(2);
     expect(mocks.listOrders).toHaveBeenLastCalledWith({ limit: 20 });
+  });
+
+  it('displays an order note and supports inline note editing', async () => {
+    const initial = order({ id: 43, note: 'Initial thesis' });
+    mocks.listOrders.mockResolvedValue(page([initial]));
+    mocks.updateOrderNote.mockResolvedValue({ ...initial, note: 'Updated thesis' });
+    render(<Orders />);
+
+    const table = await findTable();
+    const [row] = bodyRows(table);
+    expect(row).toHaveAttribute('id', 'order-43');
+    expect(within(row).getByText('Initial thesis')).toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit note for order 43' }));
+    const input = within(row).getByLabelText('Note for order 43');
+    expect(input).toHaveValue('Initial thesis');
+
+    fireEvent.change(input, { target: { value: 'Updated thesis' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Save note' }));
+
+    await waitFor(() => expect(mocks.updateOrderNote).toHaveBeenCalledWith(43, 'Updated thesis'));
+    expect(await within(row).findByText('Updated thesis')).toBeInTheDocument();
   });
 
   it('renders Open and History tabs and switches between them', async () => {

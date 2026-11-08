@@ -8,6 +8,7 @@ export const ROUTES = {
   vault: '/vault',
   orders: '/orders',
   analytics: '/analytics',
+  insights: '/insights',
   settings: '/settings',
   markets: '/markets',
   learn: '/learn',
@@ -34,6 +35,11 @@ export function marketsSearchHref(query: string): string {
 /** Instrument page: `/markets/<orderbookId>`. */
 export function instrumentHref(orderbookId: string): string {
   return `${ROUTES.markets}/${encodeURIComponent(orderbookId)}`;
+}
+
+/** Order row anchor on `/orders`: `/orders#order-<id>`. */
+export function orderHref(orderId: number): string {
+  return `${ROUTES.orders}#order-${encodeURIComponent(String(orderId))}`;
 }
 
 /** `/login?next=<path>`, e.g. loginHref('/orders') === '/login?next=%2Forders'. */

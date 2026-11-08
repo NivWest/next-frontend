@@ -20,6 +20,7 @@ const order: Order = {
   commission: 2.5,
   total: 1003.5,
   reject_reason: null,
+  note: '',
   created_at: '2026-10-25T12:00:00Z',
   filled_at: '2026-10-25T12:00:00Z',
 };
