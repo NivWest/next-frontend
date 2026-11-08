@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
 import { loginAsGuest as requestGuestSession } from '@/features/auth/api/auth';
 import type { ProfileResponse, UserProfile } from '@/features/auth/types';
 
@@ -64,7 +64,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   
   logout: async () => {
     try {
-      await api('auth/logout', { method: 'POST' });
+      await apiPost('/auth/logout');
     } catch (e) {
       console.error('Logout failed', e);
     }
@@ -73,7 +73,7 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   checkAuth: async () => {
     try {
-      const data = await api<ProfileResponse>('user/profile');
+      const data: ProfileResponse = await apiGet('/user/profile');
       set({ isAuthenticated: true, isAuthChecking: false, user: data });
     } catch {
       set({ isAuthenticated: false, isAuthChecking: false, user: null });
