@@ -1,7 +1,8 @@
-import { api } from '@/lib/api';
+import { apiPost } from '@/lib/api';
 import type { Order, OrderRequest } from '../types';
 
-// Client for order execution (backend api/openapi.yaml POST /orders, story NW-04).
+// Client for order execution (backend api/openapi.yaml POST /orders, story NW-04), typed by the generated
+// contract (src/lib/api.ts, story NW-07).
 // Errors reject with an `ApiRequestError` (src/lib/api.ts) whose `code` is an `OrderErrorCode`.
 
 /** Header that makes a retried submit replay the original order instead of executing twice. */
@@ -14,9 +15,8 @@ export function newIdempotencyKey(): string {
 
 /** POST /orders — places and executes a market order. */
 export function placeOrder(request: OrderRequest, idempotencyKey: string): Promise<Order> {
-  return api<Order>('orders', {
-    method: 'POST',
+  return apiPost('/orders', {
     headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-    body: JSON.stringify(request),
+    body: request,
   });
 }

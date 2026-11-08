@@ -1,21 +1,12 @@
-// Mirrors backend api/openapi.yaml: #/components/schemas/Profile and #/components/schemas/Error.
+// Generated from backend api/openapi.yaml (src/lib/api/schema.d.ts, `npm run api:gen`); don't redefine these.
+import type { Schemas } from '@/lib/api';
 
-export type UserRole = 'member' | 'admin' | 'guest';
+export type UserRole = Schemas['Role'];
 
-// GET /api/v1/user/profile (200) and POST /api/v1/auth/guest (201)
-export interface UserProfile {
-  id: number;
-  name: string;
-  email: string;
-  role: UserRole;
-  balance: number;
-  is_guest: boolean;
-}
+/** GET /api/v1/user/profile (200) and POST /api/v1/auth/guest (201). */
+export type UserProfile = Schemas['Profile'];
 
 export type ProfileResponse = UserProfile;
 
-// Error body of new and changed endpoints, e.g. { error: 'authentication required', code: 'UNAUTHENTICATED' }
-export interface ApiError {
-  error: string;
-  code: string;
-}
+/** Error body of every endpoint, e.g. { error: 'authentication required', code: 'UNAUTHENTICATED' }. */
+export type ApiError = Schemas['Error'];

@@ -1,0 +1,1419 @@
+openapi: 3.1.0
+info:
+  title: TradeEdu API
+  version: 0.0.0
+  summary: Virtual stock trading simulator API (NivWest backend).
+  description: |
+    Cross-repo source of truth for the NivWest backend API. Each story adds its paths here in its contract step.
+    The backend serves this file at `GET /api/v1/openapi.yaml` and an interactive reference at `GET /api/docs`.
+    A route parity test (`internal/handlers/openapi_parity_test.go`) fails when a mounted route is missing here or a
+    path here has no route, and the frontend generates its types from a vendored copy (`npm run api:gen`).
+
+    Errors use the `Error` schema: `{"error": "<human message>", "code": "<ErrorCode>"}`.
+
+    `info.version` always equals the backend's `VERSION` file (enforced by `api/spec_test.go`).
+servers:
+  - url: /api/v1
+    description: This deployment
+
+tags:
+  - name: Meta
+    description: Health and this contract.
+  - name: Auth
+    description: Google OAuth (PKCE) sign-in, the guest demo login and sign-out (story NW-01).
+  - name: User
+    description: The signed-in user's profile and admin user management.
+  - name: Market data
+    description: Public, rate-limited instrument search, quotes, details and candles (story NW-03).
+  - name: Simulated market (dev/test)
+    description: Price pinning for the simulated market. Mounted only with MARKET_SIM_CONTROL_ENABLED=true; never in production.
+  - name: Orders
+    description: Market order execution (NW-04) and order history (NW-05).
+  - name: Watchlists
+    description: Up to 10 named watchlists per user with live prices (story NW-06).
+  - name: Portfolio
+    description: Cash, positions at live prices, unrealized and realized P&L (story NW-05), equity history and risk analytics (story NW-10).
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session_id
+      description: HttpOnly session cookie set by the Google callback or POST /auth/guest.
+
+  schemas:
+    ErrorCode:
+      type: string
+      description: |
+        Stable machine-readable error code. Every `domain.Code*` constant in the backend is listed here and nothing
+        else (enforced by `internal/handlers/openapi_parity_test.go`).
+      enum:
+        - VALIDATION_ERROR
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - USER_NOT_FOUND
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+        - INSTRUMENT_NOT_FOUND
+        - MARKET_DATA_UNAVAILABLE
+        - INSUFFICIENT_FUNDS
+        - INSUFFICIENT_SHARES
+        - CONFLICT
+        - WATCHLIST_NOT_FOUND
+        - WATCHLIST_ITEM_NOT_FOUND
+        - WATCHLIST_LIMIT_REACHED
+
+    Error:
+      type: object
+      description: The body of every error response.
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: Human-readable message.
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+
+    Role:
+      type: string
+      enum: [member, admin, guest]
+
+    Profile:
+      type: object
+      description: The signed-in user. Never exposes google_id.
+      required: [id, name, email, role, balance, is_guest]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          examples: [Guest trader]
+        email:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        balance:
+          type: number
+          description: Cash balance in SEK, 2 decimals.
+          examples: [100000]
+        is_guest:
+          type: boolean
+          description: True when role is guest.
+
+    Features:
+      type: object
+      description: Optional switches that are enabled on this deployment.
+      required: [guest_auth, sim_control]
+      properties:
+        guest_auth:
+          type: boolean
+          description: True when AUTH_GUEST_ENABLED is on and POST /auth/guest is registered.
+        sim_control:
+          type: boolean
+          description: |
+            True when the dev/test price-pinning routes under /sim are mounted, i.e. MARKET_DATA_PROVIDER=simulated
+            and MARKET_SIM_CONTROL_ENABLED=true. Must never be true in production.
+
+    Health:
+      type: object
+      required: [status, version, features, market_data_provider]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+        features:
+          $ref: "#/components/schemas/Features"
+        market_data_provider:
+          type: string
+          enum: [avanza, simulated]
+          description: The active market data adapter (MARKET_DATA_PROVIDER, backend default avanza).
+
+    InstrumentSummary:
+      type: object
+      description: One instrument search hit. Prices are in `currency`, rounded half-up to 2 decimals.
+      required: [orderbook_id, symbol, name, currency, market, last_price, change_percent]
+      properties:
+        orderbook_id:
+          type: string
+          description: Stable instrument id. Simulated instruments start with `SIM-`.
+          examples: [SIM-FJRD, "5361"]
+        symbol:
+          type: string
+          description: Ticker, e.g. FJRD. May be empty when the upstream has none.
+        name:
+          type: string
+          examples: [Fjord Robotics]
+        currency:
+          type: string
+          examples: [SEK]
+        market:
+          type: string
+          description: Listing venue. `Simulated` for the simulated market.
+          examples: [Simulated, Stockholmsbörsen]
+        last_price:
+          type: number
+        change_percent:
+          type: number
+          description: Change against the price 24 hours earlier (simulated) or the previous close (Avanza), in percent, 2 decimals.
+
+    InstrumentSearchResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          description: Best match first, at most 20. Empty array when nothing matches.
+          items: { $ref: "#/components/schemas/InstrumentSummary" }
+        next_cursor:
+          type: [string, "null"]
+          description: Always null for now; search is not paginated.
+
+    Quote:
+      type: object
+      description: |
+        Latest price. On the simulated market `bid = last × 0.999` and `ask = last × 1.001` (20 bps spread),
+        each rounded half-up to 2 decimals, so `0 < bid < last < ask`.
+      required: [orderbook_id, symbol, last, bid, ask, change_percent, currency, updated_at]
+      properties:
+        orderbook_id: { type: string }
+        symbol: { type: string }
+        last: { type: number }
+        bid: { type: number }
+        ask: { type: number }
+        change_percent: { type: number }
+        currency: { type: string }
+        updated_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC.
+
+    KeyIndicators:
+      type: object
+      description: null means the provider has no value (e.g. no P/E for a loss-making company).
+      required: [pe_ratio, dividend_yield_pct, market_cap]
+      properties:
+        pe_ratio:
+          type: [number, "null"]
+          description: Price / earnings per share, 2 decimals.
+        dividend_yield_pct:
+          type: [number, "null"]
+          description: Annual dividend / last price × 100, 2 decimals (e.g. 3.25 means 3.25 %).
+        market_cap:
+          type: [number, "null"]
+          description: Market capitalisation in the instrument's currency.
+
+    InstrumentDetails:
+      type: object
+      required: [orderbook_id, symbol, name, currency, market, sector, description, last_price, change_percent, key_indicators]
+      properties:
+        orderbook_id: { type: string }
+        symbol: { type: string }
+        name: { type: string }
+        currency: { type: string }
+        market: { type: string }
+        sector:
+          type: string
+          description: May be empty when the upstream has none.
+        description:
+          type: string
+          description: Company description. Non-empty for every simulated instrument.
+        last_price: { type: number }
+        change_percent: { type: number }
+        key_indicators: { $ref: "#/components/schemas/KeyIndicators" }
+
+    CandlePeriod:
+      type: string
+      enum: ["1d", "1w", "1m", "3m", "1y"]
+      description: |
+        Chart window ending now, with its bar size:
+        1d = 24 h of 15-minute bars, 1w = 7 days of 1-hour bars, 1m = 30 days of daily bars,
+        3m = 90 days of daily bars, 1y = 365 days of weekly bars. The last bar may be partial.
+
+    Candle:
+      type: object
+      description: One OHLCV bar. `l ≤ min(o, c)` and `h ≥ max(o, c)`.
+      required: [t, o, h, l, c, v]
+      properties:
+        t:
+          type: string
+          format: date-time
+          description: Bar start, RFC 3339 UTC.
+        o: { type: number }
+        h: { type: number }
+        l: { type: number }
+        c: { type: number }
+        v:
+          type: integer
+          format: int64
+          description: Volume in shares.
+
+    CandlesResponse:
+      type: object
+      required: [orderbook_id, period, candles]
+      properties:
+        orderbook_id: { type: string }
+        period: { $ref: "#/components/schemas/CandlePeriod" }
+        candles:
+          type: array
+          description: Strictly ascending `t`.
+          items: { $ref: "#/components/schemas/Candle" }
+
+    SimPriceRequest:
+      type: object
+      required: [price]
+      properties:
+        price:
+          type: number
+          exclusiveMinimum: 0
+          description: Pinned last price; stored rounded half-up to 2 decimals.
+
+    OrderSide:
+      type: string
+      enum: [BUY, SELL]
+      description: BUY fills at the ask, SELL fills at the bid.
+
+    OrderType:
+      type: string
+      enum: [MARKET]
+      description: Only market orders until NW-08.
+
+    OrderStatus:
+      type: string
+      enum: [OPEN, FILLED, CANCELLED, REJECTED]
+      description: Market orders are always FILLED; the other states are reserved for pending orders (NW-08).
+
+    OrderRequest:
+      type: object
+      required: [orderbook_id, side, quantity]
+      properties:
+        orderbook_id:
+          type: string
+          minLength: 1
+          examples: [SIM-FJRD]
+        side:
+          $ref: "#/components/schemas/OrderSide"
+        quantity:
+          type: number
+          exclusiveMinimum: 0
+          description: Shares, at most 4 decimals.
+          examples: [10]
+        type:
+          $ref: "#/components/schemas/OrderType"
+          description: Defaults to MARKET.
+
+    Order:
+      type: object
+      description: |
+        An executed order. Pricing (all money in SEK, rounded half-up to 2 decimals):
+        - base price = ask for BUY, bid for SELL;
+        - quantity > 100 applies 0.5% slippage against the trader (BUY × 1.005, SELL × 0.995);
+        - fill_price = base price (after slippage) rounded to 2 decimals, before anything else;
+        - gross = fill_price × quantity; commission = max(1.00, 0.25% × gross);
+        - total = gross + commission (BUY, debited) or gross − commission (SELL, credited).
+        Execution waits a simulated 50–500 ms before the price is read.
+      required: [id, orderbook_id, symbol, name, side, type, status, quantity, fill_price, commission, total, created_at, filled_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        orderbook_id:
+          type: string
+        symbol:
+          type: string
+        name:
+          type: string
+        side:
+          $ref: "#/components/schemas/OrderSide"
+        type:
+          $ref: "#/components/schemas/OrderType"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        quantity:
+          type: number
+          description: Up to 4 decimals.
+        fill_price:
+          type: number
+          description: Price per share in SEK, 2 decimals.
+        commission:
+          type: number
+          description: SEK, 2 decimals.
+        total:
+          type: number
+          description: Cash debited (BUY) or credited (SELL) in SEK, 2 decimals.
+        created_at:
+          type: string
+          format: date-time
+        filled_at:
+          type: [string, "null"]
+          format: date-time
+          description: Set when status is FILLED.
+
+    WatchlistNameRequest:
+      type: object
+      description: Body of POST /watchlists and PATCH /watchlists/{id}. The name is trimmed and must then be 1–50 characters.
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          examples: [Energy]
+
+    WatchlistItemRequest:
+      type: object
+      required: [orderbook_id]
+      properties:
+        orderbook_id:
+          type: string
+          minLength: 1
+          description: Market data orderbook id; trimmed.
+          examples: [SIM-NVE]
+
+    WatchlistItem:
+      type: object
+      description: |
+        One instrument on a list, with its current quote. `last_price` and `change_percent` come from the live quote
+        (fetched concurrently for every item) and are null when the quote is unavailable.
+      required: [orderbook_id, symbol, name, last_price, change_percent, added_at]
+      properties:
+        orderbook_id:
+          type: string
+          examples: [SIM-NVE]
+        symbol:
+          type: string
+          examples: [NVE]
+        name:
+          type: string
+          examples: [Nordvik Energy]
+        last_price:
+          type: [number, "null"]
+          description: Last price in the instrument's currency, 2 decimals.
+          examples: [100.00]
+        change_percent:
+          type: [number, "null"]
+          description: Day change in percent, 2 decimals.
+          examples: [-0.42]
+        added_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC.
+
+    Watchlist:
+      type: object
+      description: A named list owned by the signed-in user. Items are in the order they were added (oldest first).
+      required: [id, name, items, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          examples: [Energy]
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/WatchlistItem" }
+        created_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC.
+
+    WatchlistListResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          description: The user's lists, at most 10, oldest first. Empty array when there are none.
+          items: { $ref: "#/components/schemas/Watchlist" }
+        next_cursor:
+          type: [string, "null"]
+          description: Always null; a user has at most 10 lists, so the list is not paginated.
+
+    OrderPage:
+      type: object
+      description: One page of the signed-in user's orders, newest first (created_at desc, then id desc).
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+          description: Empty array (never null) when there are no orders.
+        next_cursor:
+          type: [string, "null"]
+          description: |
+            Opaque cursor (URL-safe base64 of the last item's created_at and id). Pass it as `cursor` to get the
+            next page. null when this is the last page.
+
+    PortfolioPosition:
+      type: object
+      description: |
+        One open position, valued at the live last price. Money in SEK, rounded half-up to 2 decimals at serialization;
+        everything is computed in decimal first.
+        - avg_cost = (sum of BUY totals for the open lot, commission included) / quantity; a SELL leaves it unchanged;
+        - last_price = the quote's last price (2 decimals); when the quote fails, last_price = avg_cost and day_change_percent = 0;
+        - market_value = last_price × quantity; unrealized_pnl = market_value − avg_cost × quantity;
+        - unrealized_pnl_percent = unrealized_pnl / (avg_cost × quantity) × 100;
+        - weight = market_value / holdings_value × 100 (0 when holdings_value is 0).
+      required: [orderbook_id, symbol, name, quantity, avg_cost, last_price, market_value, unrealized_pnl, unrealized_pnl_percent, day_change_percent, weight]
+      properties:
+        orderbook_id: { type: string }
+        symbol: { type: string }
+        name: { type: string }
+        quantity:
+          type: number
+          description: Up to 4 decimals.
+        avg_cost:
+          type: number
+          description: SEK per share incl. buy commission, 2 decimals.
+        last_price:
+          type: number
+          description: SEK, 2 decimals.
+        market_value:
+          type: number
+          description: SEK, 2 decimals.
+        unrealized_pnl:
+          type: number
+          description: SEK, 2 decimals.
+        unrealized_pnl_percent:
+          type: number
+          description: "Percent, 2 decimals (9.62 means +9.62%)."
+        day_change_percent:
+          type: number
+          description: The quote's change today in percent, 2 decimals.
+        weight:
+          type: number
+          description: Percent of holdings_value, 2 decimals.
+
+    Portfolio:
+      type: object
+      description: |
+        The signed-in user's portfolio. Money in SEK, 2 decimals.
+        - holdings_value = Σ positions.market_value; total_equity = cash + holdings_value;
+        - unrealized_pnl = Σ positions.unrealized_pnl;
+        - realized_pnl accumulates over every SELL: sell total (net proceeds) − avg_cost × quantity sold.
+        positions are sorted by market_value desc (largest holding first), then orderbook_id asc.
+        top_movers is at most 5 positions sorted by day_change_percent desc, then orderbook_id asc.
+        Both arrays are empty (never null) without positions.
+      required: [cash, holdings_value, total_equity, unrealized_pnl, realized_pnl, positions, top_movers]
+      properties:
+        cash: { type: number }
+        holdings_value: { type: number }
+        total_equity: { type: number }
+        unrealized_pnl: { type: number }
+        realized_pnl: { type: number }
+        positions:
+          type: array
+          items: { $ref: "#/components/schemas/PortfolioPosition" }
+        top_movers:
+          type: array
+          items: { $ref: "#/components/schemas/PortfolioPosition" }
+
+    HistoryRange:
+      type: string
+      enum: ["1d", "1w", "1m", all]
+      description: |
+        Window of GET /portfolio/history, ending now: 1d = the last 24 hours, raw snapshots; 1w = the last 7 days and
+        1m = the last 30 days, bucketed hourly (the last snapshot of each UTC hour); all = every snapshot, bucketed
+        daily (the last snapshot of each UTC day).
+
+    EquityPoint:
+      type: object
+      description: One equity snapshot (cash + holdings at the last price + vault), SEK with 2 decimals.
+      required: [t, equity]
+      properties:
+        t:
+          type: string
+          format: date-time
+          description: When the snapshot was taken (RFC 3339, UTC).
+        equity:
+          type: number
+          description: Total equity in SEK, 2 decimals.
+
+    EquityHistory:
+      type: object
+      description: |
+        The signed-in user's equity over the requested range, oldest first. Snapshots are taken after every fill and
+        every SNAPSHOT_INTERVAL (default 1h) for users with at least one order, so a user without orders has no points.
+      required: [range, points]
+      properties:
+        range: { $ref: "#/components/schemas/HistoryRange" }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/EquityPoint" }
+          description: Oldest first; empty (never null) when there are no snapshots in the range.
+
+    AllocationSlice:
+      type: object
+      description: |
+        One slice of the allocation: an open position (label = symbol) or the cash (label "Cash", orderbook_id null).
+        weight = value / total_equity × 100.
+      required: [label, orderbook_id, value, weight]
+      properties:
+        label:
+          type: string
+          description: The instrument's symbol, or "Cash".
+        orderbook_id:
+          type: [string, "null"]
+          description: The position's orderbook id; null for the cash slice.
+        value:
+          type: number
+          description: Market value at the last price (cash itself for the cash slice), SEK with 2 decimals.
+        weight:
+          type: number
+          description: Percent of total equity, 2 decimals. The weights of all slices sum to exactly 100 (the rounding remainder goes to the largest slice); all 0 when total equity is 0.
+
+    PortfolioAnalytics:
+      type: object
+      description: |
+        Risk-adjusted performance of the signed-in user. Computed from the daily series (the last equity snapshot of
+        each UTC day, oldest first) with daily returns r_d = equity_d / equity_(d-1) − 1:
+        - total_return_pct = (total_equity / 100000 − 1) × 100, from the live portfolio and the 100,000 SEK start;
+        - volatility_annualized_pct = stdev(r_d) × √252 × 100 (sample standard deviation, n − 1);
+        - sharpe_ratio = (mean(r_d) − rf / 252) / stdev(r_d) × √252 with rf = RISK_FREE_RATE (default 0.02);
+          null also when stdev(r_d) is 0;
+        - max_drawdown_pct = the largest peak-to-trough decline of the daily equity, as a negative percentage
+          (0 when equity never fell).
+        Volatility, Sharpe and drawdown need at least 5 daily returns (data_points ≥ 5); below that they are null and
+        sufficient_data is false. Percentages and the ratio are rounded half-up to 2 decimals.
+      required: [total_return_pct, volatility_annualized_pct, sharpe_ratio, max_drawdown_pct, sufficient_data, data_points, allocation]
+      properties:
+        total_return_pct:
+          type: number
+          description: "Percent, 2 decimals (1.25 means +1.25%)."
+        volatility_annualized_pct:
+          type: [number, "null"]
+          description: Annualized volatility in percent, 2 decimals; null without sufficient data.
+        sharpe_ratio:
+          type: [number, "null"]
+          description: Annualized Sharpe ratio, 2 decimals; null without sufficient data or when volatility is 0.
+        max_drawdown_pct:
+          type: [number, "null"]
+          description: Largest peak-to-trough decline in percent (≤ 0), 2 decimals; null without sufficient data.
+        sufficient_data:
+          type: boolean
+          description: True when data_points ≥ 5.
+        data_points:
+          type: integer
+          minimum: 0
+          description: Number of daily returns in the daily series (days with a snapshot − 1, never below 0).
+        allocation:
+          type: array
+          items: { $ref: "#/components/schemas/AllocationSlice" }
+          description: Positions by value desc (then orderbook id asc), then the cash slice, which is always present.
+
+  responses:
+    Unauthenticated:
+      description: Missing, unknown or expired session.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "authentication required", code: UNAUTHENTICATED }
+    Forbidden:
+      description: Signed in, but the role is not allowed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "forbidden", code: FORBIDDEN }
+    ValidationError:
+      description: Invalid input.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "period must be one of 1d, 1w, 1m, 3m, 1y", code: VALIDATION_ERROR }
+    InstrumentNotFound:
+      description: Unknown orderbook id.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "instrument not found", code: INSTRUMENT_NOT_FOUND }
+    MarketDataUnavailable:
+      description: The market data upstream failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "market data unavailable", code: MARKET_DATA_UNAVAILABLE }
+    RateLimited:
+      description: Too many requests from this IP (5 per second, burst 10, shared by every /market route).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "too many requests, please try again later", code: RATE_LIMITED }
+
+    WatchlistNotFound:
+      description: No list with this id belongs to the signed-in user (another user's list is reported the same way).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "watchlist not found", code: WATCHLIST_NOT_FOUND }
+    WatchlistValidationError:
+      description: Malformed JSON, a non-numeric list id, or a name that is blank or longer than 50 characters after trimming.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "name must be at most 50 characters", code: VALIDATION_ERROR }
+
+  parameters:
+    OrderbookID:
+      name: orderbook_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+      examples:
+        simulated: { value: SIM-FJRD }
+    WatchlistID:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+
+paths:
+  /health:
+    get:
+      summary: Liveness, build version and enabled features
+      operationId: getHealth
+      tags: [Meta]
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+              example: { status: ok, version: 0.0.0, market_data_provider: simulated, features: { guest_auth: true, sim_control: true } }
+
+  /openapi.yaml:
+    get:
+      summary: This OpenAPI document
+      description: |
+        The contract the running build was compiled with (embedded with `go:embed`). Public, no session needed.
+        The interactive reference at `GET /api/docs` (outside `/api/v1`, so not listed here) renders it.
+      operationId: getOpenAPISpec
+      tags: [Meta]
+      security: []
+      responses:
+        "200":
+          description: The OpenAPI 3.1 document.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  /auth/login:
+    get:
+      summary: Start Google OAuth (PKCE); redirects to Google
+      operationId: login
+      tags: [Auth]
+      security: []
+      responses:
+        "302":
+          description: Redirect to Google. Sets the HttpOnly oauth_state cookie.
+        "500":
+          description: The OAuth state could not be created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "failed to start login", code: INTERNAL_ERROR }
+
+  /auth/callback:
+    get:
+      summary: Google OAuth callback; sets session_id and redirects to the frontend
+      operationId: callback
+      tags: [Auth]
+      security: []
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: code, in: query, required: true, schema: { type: string } }
+      responses:
+        "302":
+          description: Redirect to FRONTEND_URL/dashboard. Sets the HttpOnly session_id cookie.
+        "400":
+          description: The state does not match the oauth_state cookie.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "invalid OAuth state", code: VALIDATION_ERROR }
+        "401":
+          description: Google rejected the code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "Google authentication failed", code: UNAUTHENTICATED }
+
+  /auth/guest:
+    post:
+      summary: Sign in as a fresh guest (demo and E2E login)
+      description: |
+        Only registered when AUTH_GUEST_ENABLED=true; otherwise the route does not exist and returns 404.
+        Takes no body. Each call creates a new guest user (role guest, name "Guest trader", balance 100000)
+        and a session lasting AUTH_GUEST_SESSION_TTL (default 24h). Rate-limited per client IP
+        (AUTH_GUEST_RATE_LIMIT_PER_MINUTE, default 10 per minute). Guests are hard-deleted 24h after
+        their newest session expired.
+      operationId: loginAsGuest
+      tags: [Auth]
+      security: []
+      responses:
+        "201":
+          description: Guest created and signed in.
+          headers:
+            Set-Cookie:
+              description: "session_id=<opaque>; Path=/; Max-Age=<ttl seconds>; HttpOnly"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+              example: { id: 17, name: Guest trader, email: guest-3f2a…@guest.tradeedu.invalid, role: guest, balance: 100000, is_guest: true }
+        "404":
+          description: Guest login is disabled on this deployment.
+        "429":
+          description: Too many guest logins from this IP.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "too many guest logins, please try again later", code: RATE_LIMITED }
+        "500":
+          description: Could not create the guest.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "failed to create guest", code: INTERNAL_ERROR }
+
+  /auth/logout:
+    post:
+      summary: End the current session
+      description: Deletes the session (if any) and clears the session_id cookie. Always 204.
+      operationId: logout
+      tags: [Auth]
+      security: []
+      responses:
+        "204":
+          description: Signed out.
+
+  /user/profile:
+    get:
+      summary: The signed-in user's profile
+      operationId: getProfile
+      tags: [User]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /admin/users/{id}:
+    delete:
+      summary: Delete a user (admin only)
+      operationId: deleteUser
+      tags: [User]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "204":
+          description: Deleted.
+        "400":
+          description: Invalid id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "invalid user ID", code: VALIDATION_ERROR }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No such user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "user not found", code: USER_NOT_FOUND }
+
+  # Market data (story NW-03). Public (no session needed) and rate-limited per client IP.
+  # Served by the provider chosen with MARKET_DATA_PROVIDER (avanza | simulated).
+  /market/instruments:
+    get:
+      summary: Search instruments
+      operationId: searchInstruments
+      tags: ["Market data"]
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Matched case-insensitively against symbol, name and orderbook id. Trimmed; blank is rejected.
+          schema: { type: string, minLength: 1 }
+          example: fjord
+      responses:
+        "200":
+          description: Matches, best first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstrumentSearchResponse" }
+              example:
+                items:
+                  - { orderbook_id: SIM-FJRD, symbol: FJRD, name: Fjord Robotics, currency: SEK, market: Simulated, last_price: 142.37, change_percent: 1.25 }
+                next_cursor: null
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/MarketDataUnavailable"
+
+  /market/instruments/{orderbook_id}:
+    get:
+      summary: Instrument details and key indicators
+      operationId: getInstrumentDetails
+      tags: ["Market data"]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OrderbookID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstrumentDetails" }
+        "404":
+          $ref: "#/components/responses/InstrumentNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/MarketDataUnavailable"
+
+  /market/instruments/{orderbook_id}/quote:
+    get:
+      summary: Latest quote with bid and ask
+      operationId: getQuote
+      tags: ["Market data"]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OrderbookID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quote" }
+              example: { orderbook_id: SIM-FJRD, symbol: FJRD, last: 100.00, bid: 99.90, ask: 100.10, change_percent: -0.42, currency: SEK, updated_at: "2026-10-25T09:41:00Z" }
+        "404":
+          $ref: "#/components/responses/InstrumentNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/MarketDataUnavailable"
+
+  /market/instruments/{orderbook_id}/candles:
+    get:
+      summary: OHLCV candles for a chart period
+      operationId: getCandles
+      tags: ["Market data"]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OrderbookID"
+        - name: period
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/CandlePeriod" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CandlesResponse" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/InstrumentNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/MarketDataUnavailable"
+
+  # Simulated market control (story NW-03). DEV/TEST ONLY: the routes exist only when MARKET_DATA_PROVIDER=simulated
+  # and MARKET_SIM_CONTROL_ENABLED=true (otherwise 404); no session needed, no rate limit. Pins are global and in memory.
+  /sim/instruments/{orderbook_id}/price:
+    put:
+      summary: Pin the last price of a simulated instrument
+      description: Until the pin is cleared, quote/search/details report exactly this last price (bid/ask follow the 20 bps spread). Candles ignore pins.
+      operationId: pinSimPrice
+      tags: ["Simulated market (dev/test)"]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OrderbookID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SimPriceRequest" }
+            example: { price: 100 }
+      responses:
+        "204":
+          description: Pinned.
+        "400":
+          description: Missing, malformed or non-positive price.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "price must be greater than 0", code: VALIDATION_ERROR }
+        "404":
+          $ref: "#/components/responses/InstrumentNotFound"
+    delete:
+      summary: Clear the pinned price
+      description: Idempotent. The price follows the simulated path again.
+      operationId: clearSimPrice
+      tags: ["Simulated market (dev/test)"]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OrderbookID"
+      responses:
+        "204":
+          description: Cleared (or there was no pin).
+        "404":
+          $ref: "#/components/responses/InstrumentNotFound"
+
+  /orders:
+    get:
+      summary: List the signed-in user's orders
+      description: Newest first (created_at desc, then id desc), keyset-paginated with an opaque cursor. Other users' orders are never returned.
+      operationId: listOrders
+      tags: [Orders]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, minLength: 1 }
+          description: next_cursor of the previous page.
+      responses:
+        "200":
+          description: One page of orders.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderPage" }
+              example:
+                items:
+                  - id: 43
+                    orderbook_id: SIM-NVE
+                    symbol: NVE
+                    name: Nordvik Energy
+                    side: SELL
+                    type: MARKET
+                    status: FILLED
+                    quantity: 5
+                    fill_price: 109.89
+                    commission: 1.37
+                    total: 548.08
+                    created_at: "2026-10-26T09:42:00Z"
+                    filled_at: "2026-10-26T09:42:00Z"
+                next_cursor: eyJjIjoiMjAyNi0xMC0yNlQwOTo0MjowMFoiLCJpIjo0M30
+        "400":
+          description: limit is not an integer from 1 to 100, or cursor is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "limit must be an integer from 1 to 100", code: VALIDATION_ERROR }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      summary: Place a market order and execute it
+      description: |
+        Validates the request, prices it from the live quote (see the Order schema) and, in one DB transaction,
+        locks the user row, checks cash or shares, moves the cash, updates the position and stores the order.
+        Concurrent orders by the same user are serialized, so cash never goes negative.
+
+        With an `Idempotency-Key` header, a retry with the same key and the same body returns the original order
+        (200, identical body) and executes nothing; the same key with a different body is 409 CONFLICT.
+        Keys are unique per user, also under concurrent retries.
+      operationId: placeOrder
+      tags: [Orders]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 255, pattern: "^[\\x21-\\x7E]+$" }
+          description: Client-chosen key (printable ASCII, no spaces), e.g. a UUID per user action.
+          examples:
+            retry: { value: k-123 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderRequest" }
+            example: { orderbook_id: SIM-FJRD, side: BUY, quantity: 10 }
+      responses:
+        "201":
+          description: Executed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+              example:
+                id: 42
+                orderbook_id: SIM-FJRD
+                symbol: FJRD
+                name: Fjord Robotics
+                side: BUY
+                type: MARKET
+                status: FILLED
+                quantity: 10
+                fill_price: 100.10
+                commission: 2.50
+                total: 1003.50
+                created_at: "2026-10-25T09:41:00Z"
+                filled_at: "2026-10-25T09:41:00Z"
+        "200":
+          description: Replay of an earlier request with the same Idempotency-Key; the body equals the original 201 body.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400":
+          description: |
+            Malformed JSON, blank orderbook_id, side not BUY/SELL, quantity <= 0 or with more than 4 decimals,
+            type other than MARKET, or an invalid Idempotency-Key.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "quantity must be greater than 0", code: VALIDATION_ERROR }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/InstrumentNotFound"
+        "409":
+          description: The Idempotency-Key was already used for a different order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "idempotency key already used for a different order", code: CONFLICT }
+        "422":
+          description: Business rule; nothing was executed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                funds: { value: { error: "not enough cash for this order", code: INSUFFICIENT_FUNDS } }
+                shares: { value: { error: "not enough shares to sell", code: INSUFFICIENT_SHARES } }
+        "502":
+          $ref: "#/components/responses/MarketDataUnavailable"
+
+  # Watchlists (story NW-06). Every route needs a session and only sees the caller's own lists:
+  # another user's list id is 404 WATCHLIST_NOT_FOUND, never 403. Items are keyed by orderbook_id.
+  /watchlists:
+    get:
+      summary: The signed-in user's watchlists with live prices
+      operationId: listWatchlists
+      tags: [Watchlists]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WatchlistListResponse" }
+              example:
+                items:
+                  - id: 7
+                    name: Energy
+                    created_at: "2026-11-08T09:41:00Z"
+                    items:
+                      - { orderbook_id: SIM-NVE, symbol: NVE, name: Nordvik Energy, last_price: 100.00, change_percent: -0.42, added_at: "2026-11-08T09:41:05Z" }
+                next_cursor: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+    post:
+      summary: Create a watchlist
+      description: A user has at most 10 lists; the 11th is 422 WATCHLIST_LIMIT_REACHED. Names need not be unique.
+      operationId: createWatchlist
+      tags: [Watchlists]
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WatchlistNameRequest" }
+            example: { name: Energy }
+      responses:
+        "201":
+          description: Created, with no items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Watchlist" }
+              example: { id: 7, name: Energy, items: [], created_at: "2026-11-08T09:41:00Z" }
+        "400":
+          $ref: "#/components/responses/WatchlistValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "422":
+          description: The user already has 10 lists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "you can have at most 10 watchlists", code: WATCHLIST_LIMIT_REACHED }
+
+  /watchlists/{id}:
+    parameters:
+      - $ref: "#/components/parameters/WatchlistID"
+    get:
+      summary: One watchlist with live prices
+      operationId: getWatchlist
+      tags: [Watchlists]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Watchlist" }
+        "400":
+          $ref: "#/components/responses/WatchlistValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/WatchlistNotFound"
+    patch:
+      summary: Rename a watchlist
+      operationId: renameWatchlist
+      tags: [Watchlists]
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WatchlistNameRequest" }
+            example: { name: Renewables }
+      responses:
+        "200":
+          description: Renamed; the full list with live prices.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Watchlist" }
+        "400":
+          $ref: "#/components/responses/WatchlistValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/WatchlistNotFound"
+    delete:
+      summary: Delete a watchlist and its items
+      operationId: deleteWatchlist
+      tags: [Watchlists]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "204":
+          description: Deleted.
+        "400":
+          $ref: "#/components/responses/WatchlistValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/WatchlistNotFound"
+
+  /watchlists/{id}/items:
+    parameters:
+      - $ref: "#/components/parameters/WatchlistID"
+    post:
+      summary: Add an instrument to a watchlist
+      description: |
+        The list's ownership is checked first (404 WATCHLIST_NOT_FOUND), then the instrument (404 INSTRUMENT_NOT_FOUND),
+        then uniqueness: an instrument is on a list at most once (409 CONFLICT).
+      operationId: addWatchlistItem
+      tags: [Watchlists]
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WatchlistItemRequest" }
+            example: { orderbook_id: SIM-NVE }
+      responses:
+        "201":
+          description: Added; the new item with its current price.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WatchlistItem" }
+              example: { orderbook_id: SIM-NVE, symbol: NVE, name: Nordvik Energy, last_price: 100.00, change_percent: -0.42, added_at: "2026-11-08T09:41:05Z" }
+        "400":
+          description: Malformed JSON, a non-numeric list id or a blank orderbook_id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "orderbook_id is required", code: VALIDATION_ERROR }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          description: The list is not the user's (WATCHLIST_NOT_FOUND) or the instrument is unknown (INSTRUMENT_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                watchlist: { value: { error: "watchlist not found", code: WATCHLIST_NOT_FOUND } }
+                instrument: { value: { error: "instrument not found", code: INSTRUMENT_NOT_FOUND } }
+        "409":
+          description: The instrument is already on this list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "instrument is already on this watchlist", code: CONFLICT }
+        "502":
+          $ref: "#/components/responses/MarketDataUnavailable"
+
+  /watchlists/{id}/items/{orderbook_id}:
+    parameters:
+      - $ref: "#/components/parameters/WatchlistID"
+      - $ref: "#/components/parameters/OrderbookID"
+    delete:
+      summary: Remove an instrument from a watchlist
+      operationId: removeWatchlistItem
+      tags: [Watchlists]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          $ref: "#/components/responses/WatchlistValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          description: The list is not the user's (WATCHLIST_NOT_FOUND) or the instrument is not on it (WATCHLIST_ITEM_NOT_FOUND).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                watchlist: { value: { error: "watchlist not found", code: WATCHLIST_NOT_FOUND } }
+                item: { value: { error: "instrument is not on this watchlist", code: WATCHLIST_ITEM_NOT_FOUND } }
+
+  /portfolio:
+    get:
+      summary: The signed-in user's portfolio with cost basis and P&L
+      description: |
+        Cash, open positions valued at live quotes (fetched concurrently; a failed quote falls back to avg_cost),
+        unrealized and realized P&L. Replaces the old GET /portfolio/dashboard, which is removed.
+      operationId: getPortfolio
+      tags: [Portfolio]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: The portfolio.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Portfolio" }
+              example:
+                cash: 98996.50
+                holdings_value: 1100.00
+                total_equity: 100096.50
+                unrealized_pnl: 96.50
+                realized_pnl: 0
+                positions:
+                  - orderbook_id: SIM-NVE
+                    symbol: NVE
+                    name: Nordvik Energy
+                    quantity: 10
+                    avg_cost: 100.35
+                    last_price: 110.00
+                    market_value: 1100.00
+                    unrealized_pnl: 96.50
+                    unrealized_pnl_percent: 9.62
+                    day_change_percent: 1.25
+                    weight: 100
+                top_movers:
+                  - orderbook_id: SIM-NVE
+                    symbol: NVE
+                    name: Nordvik Energy
+                    quantity: 10
+                    avg_cost: 100.35
+                    last_price: 110.00
+                    market_value: 1100.00
+                    unrealized_pnl: 96.50
+                    unrealized_pnl_percent: 9.62
+                    day_change_percent: 1.25
+                    weight: 100
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /portfolio/history:
+    get:
+      summary: The signed-in user's equity over time
+      description: |
+        Equity snapshots of the signed-in user in the requested range, oldest first (see HistoryRange for the
+        downsampling). A snapshot is taken after every fill and every SNAPSHOT_INTERVAL (default 1h) for users with
+        at least one order; right after a fill the last point equals GET /portfolio's total_equity.
+      operationId: getPortfolioHistory
+      tags: [Portfolio]
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/HistoryRange" }
+          description: Defaults to 1d.
+      responses:
+        "200":
+          description: The equity history.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EquityHistory" }
+              example:
+                range: 1d
+                points:
+                  - { t: "2026-11-08T09:00:00Z", equity: 100000.00 }
+                  - { t: "2026-11-08T09:41:12Z", equity: 99964.97 }
+        "400":
+          description: range is not one of 1d, 1w, 1m, all.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "range must be one of 1d, 1w, 1m, all", code: VALIDATION_ERROR }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+
+  /portfolio/analytics:
+    get:
+      summary: Risk-adjusted performance and allocation of the signed-in user
+      description: |
+        Total return from the 100,000 SEK start, annualized volatility, Sharpe ratio and maximum drawdown from the
+        daily equity series, and the allocation of total equity across positions and cash (see PortfolioAnalytics).
+      operationId: getPortfolioAnalytics
+      tags: [Portfolio]
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: The analytics.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PortfolioAnalytics" }
+              examples:
+                fresh:
+                  summary: A fresh account
+                  value:
+                    total_return_pct: 0
+                    volatility_annualized_pct: null
+                    sharpe_ratio: null
+                    max_drawdown_pct: null
+                    sufficient_data: false
+                    data_points: 0
+                    allocation:
+                      - { label: Cash, orderbook_id: null, value: 100000.00, weight: 100 }
+                history:
+                  summary: Enough history
+                  value:
+                    total_return_pct: 2.15
+                    volatility_annualized_pct: 14.32
+                    sharpe_ratio: 1.12
+                    max_drawdown_pct: -3.40
+                    sufficient_data: true
+                    data_points: 21
+                    allocation:
+                      - { label: FJRD, orderbook_id: SIM-FJRD, value: 10000.00, weight: 10.00 }
+                      - { label: Cash, orderbook_id: null, value: 89964.97, weight: 90.00 }
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
