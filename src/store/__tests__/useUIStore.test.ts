@@ -13,6 +13,7 @@ const guestProfile: UserProfile = {
   role: 'guest',
   balance: 100000,
   is_guest: true,
+  leaderboard_opt_in: false,
 };
 
 const unauthenticated: ApiError = { error: 'authentication required', code: 'UNAUTHENTICATED' };

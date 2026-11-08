@@ -65,6 +65,7 @@ const trader: UserProfile = {
   role: 'member',
   balance: 100000,
   is_guest: false,
+  leaderboard_opt_in: false,
 };
 
 const initialState = useUIStore.getState();
