@@ -118,6 +118,20 @@ describe('HoldingsTable', () => {
     expect(table.querySelector('svg')).toBeNull();
   });
 
+  it('shows fractional quantities with up to 4 decimals instead of rounding to whole shares', () => {
+    const fractional: PortfolioPosition = { ...nve, quantity: 0.5 };
+    usePortfolioStore.setState({
+      portfolio: { ...withPosition, positions: [fractional], top_movers: [fractional] },
+      portfolioStatus: 'ready',
+    });
+
+    render(<HoldingsTable />);
+
+    const table = screen.getByRole('table', { name: 'Holdings' });
+    const cells = within(within(table).getAllByRole('row')[1]).getAllByRole('cell').map((c) => c.textContent);
+    expect(cells[1]).toBe('0.5');
+  });
+
   it('keeps showing the last portfolio while a refresh is loading', () => {
     usePortfolioStore.setState({ portfolio: withPosition, portfolioStatus: 'loading' });
 

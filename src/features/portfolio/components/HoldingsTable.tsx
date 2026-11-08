@@ -4,7 +4,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { formatSignedMoney, pnlTone, type PnlTone } from '@/features/portfolio/selectors';
 import type { PortfolioPosition } from '@/features/portfolio/types';
-import { formatMoney, formatPercent } from '@/lib/format';
+import { formatMoney, formatPercent, formatQuantity } from '@/lib/format';
 import { instrumentHref, ROUTES } from '@/lib/routes';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 
@@ -13,8 +13,6 @@ const TONE_CLASS: Record<PnlTone, string> = {
   negative: 'text-red-500',
   neutral: 'text-[#a1a1aa]',
 };
-
-const quantityFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
 /** Share of holdings_value: `100.00%`. */
 function formatWeight(weight: number): string {
@@ -36,7 +34,7 @@ function HoldingRow({ position }: { position: PortfolioPosition }) {
         </Link>
         <div className="text-xs text-[#a1a1aa]">{position.symbol}</div>
       </td>
-      <td className="px-4 py-3 text-right text-white tabular-nums">{quantityFormat.format(position.quantity)}</td>
+      <td className="px-4 py-3 text-right text-white tabular-nums">{formatQuantity(position.quantity)}</td>
       <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatMoney(position.avg_cost)}</td>
       <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">
         {formatMoney(position.last_price)}
