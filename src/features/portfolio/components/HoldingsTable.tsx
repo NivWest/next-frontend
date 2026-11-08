@@ -2,7 +2,11 @@
 
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { formatSignedMoney, pnlTone, type PnlTone } from '@/features/portfolio/selectors';
+import { FlashValue } from '@/features/markets/components/FlashValue';
+import { LiveIndicator } from '@/features/markets/components/LiveIndicator';
+import { useLiveQuotes } from '@/features/markets/hooks/useLiveQuotes';
+import type { LiveQuote } from '@/features/markets/store/useLiveQuoteStore';
+import { formatSignedMoney, pnlTone, withLivePrice, type PnlTone } from '@/features/portfolio/selectors';
 import type { PortfolioPosition } from '@/features/portfolio/types';
 import { formatMoney, formatPercent, formatQuantity } from '@/lib/format';
 import { instrumentHref, ROUTES } from '@/lib/routes';
@@ -23,7 +27,14 @@ function positionCount(count: number): string {
   return `${count} ${count === 1 ? 'position' : 'positions'}`;
 }
 
-function HoldingRow({ position }: { position: PortfolioPosition }) {
+interface HoldingRowProps {
+  position: PortfolioPosition;
+  /** The streamed quote of this instrument (story NW-09), if one arrived. */
+  live: LiveQuote | undefined;
+}
+
+function HoldingRow({ position: loaded, live }: HoldingRowProps) {
+  const position = withLivePrice(loaded, live?.quote);
   const pnlClass = TONE_CLASS[pnlTone(position.unrealized_pnl)];
   const dayClass = TONE_CLASS[pnlTone(position.day_change_percent)];
   return (
@@ -37,7 +48,7 @@ function HoldingRow({ position }: { position: PortfolioPosition }) {
       <td className="px-4 py-3 text-right text-white tabular-nums">{formatQuantity(position.quantity)}</td>
       <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatMoney(position.avg_cost)}</td>
       <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">
-        {formatMoney(position.last_price)}
+        <FlashValue live={live}>{formatMoney(position.last_price)}</FlashValue>
       </td>
       <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">
         {formatMoney(position.market_value)}
@@ -68,6 +79,9 @@ const COLUMNS: { label: string; align: 'left' | 'right' }[] = [
 export function HoldingsTable() {
   const portfolio = usePortfolioStore((state) => state.portfolio);
   const status = usePortfolioStore((state) => state.portfolioStatus);
+  const { quotes: liveQuotes, status: streamStatus } = useLiveQuotes(
+    portfolio ? portfolio.positions.map((position) => position.orderbook_id) : [],
+  );
 
   let body: ReactNode;
   if (!portfolio) {
@@ -109,7 +123,7 @@ export function HoldingsTable() {
           </thead>
           <tbody className="divide-y divide-[#27272a]">
             {portfolio.positions.map((position) => (
-              <HoldingRow key={position.orderbook_id} position={position} />
+              <HoldingRow key={position.orderbook_id} position={position} live={liveQuotes[position.orderbook_id]} />
             ))}
           </tbody>
         </table>
@@ -120,7 +134,10 @@ export function HoldingsTable() {
   return (
     <section className="bg-[#0a0a0a] border border-[#27272a] rounded-xl shadow-sm overflow-hidden">
       <div className="p-4 border-b border-[#27272a] flex flex-wrap justify-between items-center gap-2">
-        <h2 className="text-sm font-medium text-white">Holdings</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-medium text-white">Holdings</h2>
+          <LiveIndicator status={streamStatus} />
+        </div>
         <span className="text-xs text-[#a1a1aa]" data-testid="holdings-summary">
           {portfolio
             ? `${positionCount(portfolio.positions.length)} · ${formatMoney(portfolio.holdings_value)}`

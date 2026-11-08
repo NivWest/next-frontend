@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { formatOrderTime, formatQuantity, sideLabel, statusLabel } from '../format';
+import { formatOrderMoney, formatOrderTime, formatQuantity, sideLabel, statusLabel, typeLabel } from '../format';
 
 describe('sideLabel', () => {
   it('maps BUY and SELL to Buy and Sell', () => {
     expect(sideLabel('BUY')).toBe('Buy');
     expect(sideLabel('SELL')).toBe('Sell');
+  });
+});
+
+describe('typeLabel', () => {
+  it('maps order types to title-case labels', () => {
+    expect(typeLabel('MARKET')).toBe('Market');
+    expect(typeLabel('LIMIT')).toBe('Limit');
+    expect(typeLabel('STOP')).toBe('Stop');
+  });
+});
+
+describe('formatOrderMoney', () => {
+  it('returns formatted money for numbers and a dash for null', () => {
+    expect(formatOrderMoney(100.1)).toBe('100.10 SEK');
+    expect(formatOrderMoney(null)).toBe('—');
   });
 });
 
