@@ -1,6 +1,6 @@
 // Pure helpers over the GET /portfolio body (story NW-05). Money is SEK with 2 decimals.
 import { formatMoney } from '@/lib/format';
-import type { Portfolio, PortfolioPosition } from './types';
+import type { Portfolio } from './types';
 
 export type PnlTone = 'positive' | 'negative' | 'neutral';
 
@@ -9,22 +9,6 @@ function roundCents(value: number): number {
   const cents = Math.round(Math.abs(value) * 100 + Number.EPSILON) / 100;
   const rounded = value < 0 ? -cents : cents;
   return rounded === 0 ? 0 : rounded;
-}
-
-/** The position with the highest market value; ties go to the lowest orderbook_id. Null without positions. */
-export function largestHolding(p: Portfolio | null): PortfolioPosition | null {
-  if (!p) return null;
-  let best: PortfolioPosition | null = null;
-  for (const position of p.positions) {
-    if (
-      best === null ||
-      position.market_value > best.market_value ||
-      (position.market_value === best.market_value && position.orderbook_id < best.orderbook_id)
-    ) {
-      best = position;
-    }
-  }
-  return best;
 }
 
 /** What the open positions cost: holdings_value − unrealized_pnl, in cents. 0 without a portfolio. */

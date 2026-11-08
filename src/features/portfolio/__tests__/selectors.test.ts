@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   costBasis,
   formatSignedMoney,
-  largestHolding,
   pnlTone,
   unrealizedPnlPercent,
   withLivePrice,
@@ -45,26 +44,6 @@ const fresh = portfolio({
   total_equity: 100000,
   unrealized_pnl: 0,
   positions: [],
-});
-
-describe('largestHolding', () => {
-  it('returns null without a portfolio or positions', () => {
-    expect(largestHolding(null)).toBeNull();
-    expect(largestHolding(fresh)).toBeNull();
-  });
-
-  it('picks the highest market value regardless of order', () => {
-    const big = position({ orderbook_id: 'SIM-BIG', market_value: 5000 });
-    const p = portfolio({ positions: [position({ market_value: 10 }), big, position({ orderbook_id: 'SIM-X', market_value: 20 })] });
-    expect(largestHolding(p)).toBe(big);
-  });
-
-  it('breaks ties by the lowest orderbook_id', () => {
-    const b = position({ orderbook_id: 'SIM-B', market_value: 100 });
-    const a = position({ orderbook_id: 'SIM-A', market_value: 100 });
-    expect(largestHolding(portfolio({ positions: [b, a] }))).toBe(a);
-    expect(largestHolding(portfolio({ positions: [a, b] }))).toBe(a);
-  });
 });
 
 describe('costBasis', () => {
