@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import type { Portfolio } from '@/features/portfolio/types';
-import type { Watchlist } from '@/features/watchlist/types';
 
 type FetchMock = Mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>;
 
@@ -30,15 +29,6 @@ const portfolio: Portfolio = {
   top_movers: [],
 };
 
-const watchlists: Watchlist[] = [
-  {
-    id: 7,
-    user_id: 1,
-    name: 'Default',
-    items: [{ id: 1, watchlist_id: 7, stock_id: 3, stock: { id: 3, symbol: 'FJRD', name: 'Fjord Energy AB' } }],
-  },
-];
-
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -54,12 +44,11 @@ function calledUrls(): string[] {
   return fetchMock.mock.calls.map((call) => String(call[0]));
 }
 
-/** Routes /portfolio and /watchlists to the given responses. */
+/** Routes /portfolio to the given response; anything else is a 404. */
 function routeFetch(portfolioResponse: () => Response): void {
   fetchMock.mockImplementation(async (input) => {
     const url = String(input);
     if (url === '/api/v1/portfolio') return portfolioResponse();
-    if (url === '/api/v1/watchlists') return jsonResponse(watchlists);
     return jsonResponse({ error: 'not found' }, 404);
   });
 }
@@ -83,7 +72,7 @@ describe('usePortfolioStore', () => {
     expect(state.portfolioStatus).toBe('idle');
   });
 
-  it('loads the typed portfolio from GET /portfolio, then the watchlists', async () => {
+  it('loads the typed portfolio from GET /portfolio only (watchlists live in useWatchlistStore since NW-06)', async () => {
     routeFetch(() => jsonResponse(portfolio));
 
     await usePortfolioStore.getState().fetchPortfolio();
@@ -91,9 +80,7 @@ describe('usePortfolioStore', () => {
     const state = usePortfolioStore.getState();
     expect(state.portfolioStatus).toBe('ready');
     expect(state.portfolio).toEqual(portfolio);
-    expect(state.watchlist).toEqual(['FJRD']);
-    expect(state.watchlistId).toBe(7);
-    expect(calledUrls()).toEqual(['/api/v1/portfolio', '/api/v1/watchlists']);
+    expect(calledUrls()).toEqual(['/api/v1/portfolio']);
     expect(calledUrls()).not.toContain('/api/v1/portfolio/dashboard');
   });
 
@@ -125,17 +112,6 @@ describe('usePortfolioStore', () => {
     const state = usePortfolioStore.getState();
     expect(state.portfolioStatus).toBe('error');
     expect(state.portfolio).toEqual(portfolio);
-  });
-
-  it('still loads the watchlists when the portfolio fails', async () => {
-    routeFetch(() => jsonResponse({ error: 'boom' }, 500));
-
-    await usePortfolioStore.getState().fetchPortfolio();
-
-    const state = usePortfolioStore.getState();
-    expect(state.portfolioStatus).toBe('error');
-    expect(state.portfolio).toBeNull();
-    expect(state.watchlist).toEqual(['FJRD']);
   });
 
   it('keeps an empty portfolio as ready with no positions', async () => {

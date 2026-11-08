@@ -34,4 +34,3 @@ export interface Portfolio {
   positions: PortfolioPosition[];
   top_movers: PortfolioPosition[];
 }
-

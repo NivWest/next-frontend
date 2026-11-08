@@ -1,81 +1,358 @@
 'use client';
 
-import { usePortfolioStore } from '@/store/usePortfolioStore';
+import Link from 'next/link';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { MoreHorizontal, Plus, Star, Trash2 } from 'lucide-react';
+import { formatMoney, formatPercent } from '@/lib/format';
+import { ROUTES, instrumentHref } from '@/lib/routes';
 import { useUIStore } from '@/store/useUIStore';
-import { Star, TrendingUp, TrendingDown, Trash2 } from 'lucide-react';
+import { useWatchlistStore } from '../store/useWatchlistStore';
+import type { Watchlist as WatchlistModel, WatchlistItem } from '../types';
+import { watchlistErrorMessage } from '../watchlist';
+import { handleMenuKeyDown, useDismiss } from './useDismiss';
+import { WatchlistNameForm } from './WatchlistNameForm';
 
+const MISSING = '—';
+
+function changeClass(value: number | null): string {
+  if (value === null || value === 0) return 'text-[#a1a1aa]';
+  return value > 0 ? 'text-green-500' : 'text-red-500';
+}
+
+/**
+ * `/watchlist` (story NW-06): one tab per list, the selected list's instruments with live price and day change,
+ * a "Remove <name>" button per row, rename/delete through the "List actions" menu, and "No watchlists yet"
+ * when the user has none. The page sits behind AuthGuard, so the user is signed in.
+ */
 export function Watchlist() {
-  const { watchlist, removeFromWatchlist } = usePortfolioStore();
-  const { isAuthenticated } = useUIStore();
+  const { watchlists, status, fetchWatchlists, createWatchlist } = useWatchlistStore();
+  const { addToast } = useUIStore();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const tabsId = useId();
 
-  if (!isAuthenticated) {
-    return (
-      <div className="max-w-4xl mx-auto p-6 flex flex-col items-center justify-center text-center mt-20">
-        <Star className="text-[#a1a1aa] w-12 h-12 mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">Sign in to use Watchlist</h2>
-        <p className="text-[#a1a1aa] mb-6">Create an account to track your favorite assets and monitor their performance.</p>
-        <a href="/api/v1/auth/login" className="px-6 py-2 bg-green-500 text-black font-semibold rounded-lg hover:bg-green-400">
-          Sign In
-        </a>
+  useEffect(() => {
+    void fetchWatchlists();
+  }, [fetchWatchlists]);
+
+  // The selected list, falling back to the first one (e.g. after the selected list was deleted).
+  const selected = watchlists.find((list) => list.id === selectedId) ?? watchlists[0] ?? null;
+
+  const handleCreate = async (name: string): Promise<void> => {
+    try {
+      const list = await createWatchlist(name);
+      setSelectedId(list.id);
+      setCreating(false);
+      addToast(`Created ${list.name}`, 'success');
+    } catch (e) {
+      throw new Error(watchlistErrorMessage(e));
+    }
+  };
+
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (!selected || (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft')) return;
+    event.preventDefault();
+    const index = watchlists.findIndex((list) => list.id === selected.id);
+    const step = event.key === 'ArrowRight' ? 1 : -1;
+    const next = watchlists[(index + step + watchlists.length) % watchlists.length];
+    setSelectedId(next.id);
+    document.getElementById(`${tabsId}-tab-${next.id}`)?.focus();
+  };
+
+  const initialLoad = watchlists.length === 0 && (status === 'idle' || status === 'loading');
+
+  return (
+    // The cookie banner is fixed to the bottom: the padding lets the last rows scroll above it.
+    <div className="max-w-4xl mx-auto p-4 md:p-6 pb-64 md:pb-64">
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <Star className="text-yellow-500" aria-hidden="true" />
+        <h1 className="text-2xl font-bold text-white">Watchlist</h1>
+        {watchlists.length > 0 && !creating && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="ml-auto inline-flex items-center gap-2 rounded-lg border border-[#27272a] px-3 py-2 text-sm text-white hover:bg-[#111111]"
+          >
+            <Plus size={16} aria-hidden="true" />
+            New list
+          </button>
+        )}
       </div>
-    );
-  }
 
-  const getMockData = (ticker: string) => {
-    // Generate deterministic mock data based on ticker length
-    const price = (ticker.length * 150.34) + 20;
-    const change = (ticker.length % 2 === 0) ? 1.2 : -0.8;
-    return { price, change };
+      {creating && (
+        <div role="group" aria-label="New watchlist" className="mb-6 max-w-sm rounded-xl border border-[#27272a] bg-[#0a0a0a] p-4">
+          <WatchlistNameForm submitLabel="Create list" onSubmit={handleCreate} onCancel={() => setCreating(false)} />
+        </div>
+      )}
+
+      {initialLoad ? (
+        <p role="status" className="text-[#a1a1aa]">
+          Loading watchlists…
+        </p>
+      ) : status === 'error' && watchlists.length === 0 ? (
+        <div role="alert" className="rounded-xl border border-[#27272a] bg-[#0a0a0a] p-6 text-sm text-red-500">
+          Could not load your watchlists.{' '}
+          <button type="button" onClick={() => void fetchWatchlists()} className="underline">
+            Try again
+          </button>
+        </div>
+      ) : selected === null ? (
+        <div className="rounded-xl border border-[#27272a] bg-[#0a0a0a] p-12 text-center">
+          <h2 className="text-lg font-semibold text-white mb-2">No watchlists yet</h2>
+          <p className="text-sm text-[#a1a1aa] mb-6">
+            Create a list, then add instruments to it from their page in{' '}
+            <Link href={ROUTES.markets} className="text-green-500 hover:underline">
+              Markets
+            </Link>
+            .
+          </p>
+          {!creating && (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-green-500 px-4 py-2 text-sm font-semibold text-black hover:bg-green-400"
+            >
+              <Plus size={16} aria-hidden="true" />
+              Create a list
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          <div role="tablist" aria-label="Watchlists" onKeyDown={onTabKeyDown} className="mb-4 flex gap-2 overflow-x-auto scrollbar-hide">
+            {watchlists.map((list) => {
+              const isSelected = list.id === selected.id;
+              return (
+                <button
+                  key={list.id}
+                  id={`${tabsId}-tab-${list.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  aria-controls={`${tabsId}-panel`}
+                  tabIndex={isSelected ? 0 : -1}
+                  onClick={() => setSelectedId(list.id)}
+                  className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    isSelected ? 'bg-white text-black' : 'bg-[#111111] text-[#a1a1aa] hover:text-white'
+                  }`}
+                >
+                  {list.name}
+                </button>
+              );
+            })}
+          </div>
+
+          <div id={`${tabsId}-panel`} role="tabpanel" aria-labelledby={`${tabsId}-tab-${selected.id}`}>
+            <WatchlistPanel key={selected.id} list={selected} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+interface WatchlistPanelProps {
+  list: WatchlistModel;
+}
+
+type PanelMode = 'view' | 'rename' | 'confirm-delete';
+
+/** The selected list: its actions menu, rename form or delete confirmation, and the items table. */
+function WatchlistPanel({ list }: WatchlistPanelProps) {
+  const { renameWatchlist, deleteWatchlist, removeItem } = useWatchlistStore();
+  const { addToast } = useUIStore();
+  const [mode, setMode] = useState<PanelMode>('view');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const menuRootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  const closeMenu = useCallback((): void => {
+    setMenuOpen(false);
+    triggerRef.current?.focus();
+  }, []);
+  useDismiss(menuRootRef, menuOpen, closeMenu);
+
+  useEffect(() => {
+    if (menuOpen) menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [menuOpen]);
+
+  const handleRename = async (name: string): Promise<void> => {
+    try {
+      await renameWatchlist(list.id, name);
+      setMode('view');
+    } catch (e) {
+      throw new Error(watchlistErrorMessage(e));
+    }
+  };
+
+  const handleDelete = async (): Promise<void> => {
+    setDeleting(true);
+    try {
+      await deleteWatchlist(list.id);
+      addToast(`Deleted ${list.name}`, 'success');
+    } catch (e) {
+      addToast(watchlistErrorMessage(e), 'error');
+      setDeleting(false);
+    }
+  };
+
+  const handleRemove = async (item: WatchlistItem): Promise<void> => {
+    setRemoving(item.orderbook_id);
+    try {
+      await removeItem(list.id, item.orderbook_id);
+      addToast(`Removed ${item.symbol || item.name} from ${list.name}`, 'success');
+    } catch (e) {
+      addToast(watchlistErrorMessage(e), 'error');
+    } finally {
+      setRemoving(null);
+    }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Star className="text-yellow-500" />
-        <h1 className="text-2xl font-bold text-white">Watchlist</h1>
+    <div className="bg-[#0a0a0a] border border-[#27272a] rounded-xl shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-[#27272a] px-4 py-3 md:px-6">
+        <h2 className="truncate text-base font-semibold text-white">{list.name}</h2>
+        <div ref={menuRootRef} className="relative">
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label="List actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-controls={menuOpen ? menuId : undefined}
+            onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
+            className="rounded-lg p-2 text-[#a1a1aa] hover:bg-[#111111] hover:text-white"
+          >
+            <MoreHorizontal size={18} aria-hidden="true" />
+          </button>
+          {menuOpen && (
+            <div
+              id={menuId}
+              ref={menuRef}
+              role="menu"
+              aria-label="List actions"
+              onKeyDown={handleMenuKeyDown}
+              className="absolute right-0 z-[45] mt-2 w-44 rounded-xl border border-[#27272a] bg-[#111111] p-1 shadow-2xl"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMode('rename');
+                }}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-white hover:bg-[#27272a] focus:bg-[#27272a] focus:outline-none"
+              >
+                Rename list
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMode('confirm-delete');
+                }}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-500 hover:bg-[#27272a] focus:bg-[#27272a] focus:outline-none"
+              >
+                Delete list
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="bg-[#0a0a0a] border border-[#27272a] rounded-xl shadow-sm overflow-hidden">
-        {watchlist.length === 0 ? (
-          <div className="p-12 text-center text-[#a1a1aa]">
-            <p>Your watchlist is empty. Search for assets to add them here.</p>
+      {mode === 'rename' && (
+        <div role="group" aria-label="Rename watchlist" className="border-b border-[#27272a] p-4 md:px-6 max-w-sm">
+          <WatchlistNameForm submitLabel="Save name" initialName={list.name} onSubmit={handleRename} onCancel={() => setMode('view')} />
+        </div>
+      )}
+
+      {mode === 'confirm-delete' && (
+        <div role="alertdialog" aria-label={`Delete ${list.name}?`} className="border-b border-[#27272a] p-4 md:px-6">
+          <p className="mb-3 text-sm text-white">
+            Delete <strong>{list.name}</strong> and its {list.items.length === 1 ? '1 instrument' : `${list.items.length} instruments`}?
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleDelete()}
+              disabled={deleting}
+              aria-busy={deleting}
+              className="rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-black hover:bg-red-400 disabled:opacity-60"
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('view')}
+              className="rounded-lg border border-[#27272a] px-3 py-2 text-sm text-white hover:bg-[#27272a]"
+            >
+              Cancel
+            </button>
           </div>
-        ) : (
+        </div>
+      )}
+
+      {list.items.length === 0 ? (
+        <div className="p-12 text-center text-sm text-[#a1a1aa]">
+          <p>
+            This list is empty. Open an instrument in{' '}
+            <Link href={ROUTES.markets} className="text-green-500 hover:underline">
+              Markets
+            </Link>{' '}
+            and use &quot;Add to watchlist&quot;.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-[#a1a1aa] bg-[#111111] border-b border-[#27272a]">
               <tr>
-                <th className="px-6 py-4 font-medium">Ticker</th>
-                <th className="px-6 py-4 font-medium text-right">Price</th>
-                <th className="px-6 py-4 font-medium text-right">Day Change</th>
-                <th className="px-6 py-4 font-medium text-right">Action</th>
+                <th scope="col" className="px-4 md:px-6 py-3 font-medium">Name</th>
+                <th scope="col" className="px-4 md:px-6 py-3 font-medium text-right">Price</th>
+                <th scope="col" className="px-4 md:px-6 py-3 font-medium text-right">Day change</th>
+                <th scope="col" className="px-4 md:px-6 py-3 font-medium text-right">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#27272a]">
-              {watchlist.map(ticker => {
-                const { price, change } = getMockData(ticker);
-                return (
-                  <tr key={ticker} className="hover:bg-[#111111] transition-colors">
-                    <td className="px-6 py-4 font-medium text-white">{ticker}</td>
-                    <td className="px-6 py-4 text-right text-white">${price.toFixed(2)}</td>
-                    <td className={`px-6 py-4 text-right flex items-center justify-end gap-1 ${change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {change >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                      {change > 0 ? '+' : ''}{change.toFixed(2)}%
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => removeFromWatchlist(ticker)}
-                        className="text-red-500 hover:text-red-400 opacity-70 hover:opacity-100 transition-opacity"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {list.items.map((item) => (
+                <tr key={item.orderbook_id} className="hover:bg-[#111111] transition-colors">
+                  <td className="px-4 md:px-6 py-3">
+                    <Link href={instrumentHref(item.orderbook_id)} className="font-medium text-white hover:underline">
+                      {item.name}
+                    </Link>
+                    <span className="block text-xs text-[#71717a]">{item.symbol || item.orderbook_id}</span>
+                  </td>
+                  <td className="px-4 md:px-6 py-3 text-right text-white whitespace-nowrap">
+                    {item.last_price === null ? MISSING : formatMoney(item.last_price)}
+                  </td>
+                  <td className={`px-4 md:px-6 py-3 text-right whitespace-nowrap ${changeClass(item.change_percent)}`}>
+                    {item.change_percent === null ? MISSING : formatPercent(item.change_percent)}
+                  </td>
+                  <td className="px-4 md:px-6 py-3 text-right">
+                    <button
+                      type="button"
+                      aria-label={`Remove ${item.name}`}
+                      disabled={removing === item.orderbook_id}
+                      aria-busy={removing === item.orderbook_id}
+                      onClick={() => void handleRemove(item)}
+                      className="rounded-lg p-2 text-red-500 opacity-80 hover:bg-[#27272a] hover:opacity-100 disabled:opacity-40"
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

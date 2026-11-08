@@ -5,9 +5,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { formatMoney, formatPercent } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
-import { usePortfolioStore } from '@/store/usePortfolioStore';
-import { useUIStore } from '@/store/useUIStore';
 import { OrderTicket } from '@/features/trading/components/OrderTicket';
+import { AddToWatchlistMenu } from '@/features/watchlist/components/AddToWatchlistMenu';
 import { getInstrumentDetails, getQuote } from '../api/market';
 import {
   DEFAULT_CANDLE_PERIOD,
@@ -57,8 +56,6 @@ function changeClass(value: number): string {
 /** Public instrument page at `/markets/<orderbookId>`: quote, order ticket, price chart, company overview and key indicators. */
 export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
   const [result, setResult] = useState<LoadResult | null>(null);
-  const { addToWatchlist } = usePortfolioStore();
-  const { addToast } = useUIStore();
 
   useEffect(() => {
     let isMounted = true;
@@ -91,6 +88,12 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold text-white">{title}</h1>
         {isSimulatedInstrument(orderbookId) && <SimulatedBadge />}
+        {/* Top of the page, away from the fixed cookie banner and toasts at the bottom. */}
+        {details && (
+          <div className="ml-auto">
+            <AddToWatchlistMenu orderbookId={orderbookId} symbol={details.symbol || orderbookId} />
+          </div>
+        )}
       </div>
       {details && (
         <p className="mt-1 text-sm text-[#a1a1aa]">
@@ -130,17 +133,6 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
   const { quote } = current;
   const currency = current.details.currency || quote.currency;
   const { pe_ratio, dividend_yield_pct, market_cap } = current.details.key_indicators;
-  const ticker = current.details.symbol || orderbookId;
-
-  const handleAddWatchlist = async () => {
-    try {
-      await addToWatchlist(ticker, title);
-      addToast(`${title} added to watchlist!`, 'success');
-    } catch {
-      addToast('Sign in to save to your watchlist', 'error');
-    }
-  };
-
   const indicators: ReadonlyArray<{ label: string; value: string }> = [
     { label: 'P/E Ratio', value: pe_ratio === null ? MISSING : pe_ratio.toFixed(2) },
     { label: 'Dividend Yield', value: dividend_yield_pct === null ? MISSING : `${dividend_yield_pct.toFixed(2)}%` },
@@ -177,16 +169,6 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
         <OrderTicket orderbookId={orderbookId} />
 
         <PriceChart orderbookId={orderbookId} currency={currency} initialPeriod={DEFAULT_CANDLE_PERIOD} />
-
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleAddWatchlist}
-            className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-3 rounded-lg transition-colors"
-          >
-            Add to Watchlist
-          </button>
-        </div>
 
         <section>
           <div className="flex items-center gap-2 mb-4">
