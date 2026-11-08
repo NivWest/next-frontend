@@ -19,6 +19,7 @@ function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
     unrealized_pnl_percent: 0,
     day_change_percent: 0,
     weight: 100,
+    reserved_quantity: 0,
     ...overrides,
   };
 }
@@ -26,6 +27,8 @@ function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
 function portfolio(topMovers: PortfolioPosition[]): Portfolio {
   return {
     cash: 100000,
+    reserved_cash: 0,
+    buying_power: 100000,
     holdings_value: 0,
     vault_value: 0,
     total_equity: 100000,

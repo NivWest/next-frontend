@@ -1,10 +1,27 @@
-import { apiGet } from '@/lib/api';
-import type { ListOrdersParams, OrderPage } from '../types';
+import { apiDelete, apiGet } from '@/lib/api';
+import type { OrderStatus } from '@/features/trading/types';
+import type { ListOrdersParams, Order, OrderPage } from '../types';
 
-// Client for the order history (backend api/openapi.yaml GET /orders, story NW-05), typed by the generated
-// contract (src/lib/api.ts, story NW-07). Errors reject with an `ApiRequestError` (src/lib/api.ts).
+// Client for the order history and pending orders (backend api/openapi.yaml GET /orders, GET/DELETE /orders/{id}, story NW-05 and NW-08),
+// typed by the generated contract (src/lib/api.ts, story NW-07). Errors reject with an `ApiRequestError` (src/lib/api.ts).
 
-/** GET /orders?limit=&cursor= — one page of the signed-in user's orders, newest first. */
-export function listOrders({ limit, cursor }: ListOrdersParams = {}): Promise<OrderPage> {
-  return apiGet('/orders', { query: { limit, cursor: cursor || undefined } });
+/** GET /orders?limit=&cursor=&status= — one page of the signed-in user's orders, newest first. */
+export function listOrders({ limit, cursor, status }: ListOrdersParams = {}): Promise<OrderPage> {
+  return apiGet('/orders', {
+    query: {
+      limit,
+      cursor: cursor || undefined,
+      status: status ? (status as OrderStatus[]) : undefined,
+    },
+  });
+}
+
+/** GET /orders/{id} — one order of the signed-in user. */
+export function getOrder(id: number): Promise<Order> {
+  return apiGet('/orders/{id}', { path: { id } });
+}
+
+/** DELETE /orders/{id} — cancels an OPEN order and releases its reservation. */
+export function cancelOrder(id: number): Promise<Order> {
+  return apiDelete('/orders/{id}', { path: { id } });
 }

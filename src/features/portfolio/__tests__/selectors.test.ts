@@ -4,6 +4,7 @@ import {
   formatSignedMoney,
   pnlTone,
   unrealizedPnlPercent,
+  withLivePrice,
 } from '../selectors';
 import type { Portfolio, PortfolioPosition } from '../types';
 
@@ -20,6 +21,7 @@ function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
     unrealized_pnl_percent: 9.62,
     day_change_percent: 1.25,
     weight: 100,
+    reserved_quantity: 0,
     ...overrides,
   };
 }
@@ -27,6 +29,8 @@ function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
 function portfolio(overrides: Partial<Portfolio> = {}): Portfolio {
   return {
     cash: 98996.5,
+    reserved_cash: 0,
+    buying_power: 98996.5,
     holdings_value: 1100,
     vault_value: 0,
     total_equity: 100096.5,
@@ -40,6 +44,8 @@ function portfolio(overrides: Partial<Portfolio> = {}): Portfolio {
 
 const fresh = portfolio({
   cash: 100000,
+  reserved_cash: 0,
+  buying_power: 100000,
   holdings_value: 0,
   total_equity: 100000,
   unrealized_pnl: 0,
@@ -98,3 +104,33 @@ describe('formatSignedMoney', () => {
     expect(formatSignedMoney(1, 'USD')).toBe('+1.00 USD');
   });
 });
+
+describe('withLivePrice', () => {
+  it('returns the same position when live price is missing or not positive', () => {
+    const pos = position({ last_price: 100 });
+    expect(withLivePrice(pos, null)).toBe(pos);
+    expect(withLivePrice(pos, undefined)).toBe(pos);
+    expect(withLivePrice(pos, { last: 0, change_percent: 0 })).toBe(pos);
+    expect(withLivePrice(pos, { last: -5, change_percent: 0 })).toBe(pos);
+  });
+
+  it('returns the same position when price and change are identical', () => {
+    const pos = position({ last_price: 110, day_change_percent: 1.25 });
+    expect(withLivePrice(pos, { last: 110, change_percent: 1.25 })).toBe(pos);
+  });
+
+  it('revalues market value and unrealized P&L based on new price', () => {
+    // 10 shares, market value 1100, unrealized pnl 96.5 -> cost = 1100 - 96.5 = 1003.5
+    const pos = position({ quantity: 10, last_price: 110, market_value: 1100, unrealized_pnl: 96.5 });
+    const updated = withLivePrice(pos, { last: 120, change_percent: 5 });
+    // new market value = 10 * 120 = 1200
+    // new pnl = 1200 - 1003.5 = 196.5
+    // pnl % = (196.5 / 1003.5) * 100 = 19.58%
+    expect(updated.last_price).toBe(120);
+    expect(updated.market_value).toBe(1200);
+    expect(updated.unrealized_pnl).toBe(196.5);
+    expect(updated.unrealized_pnl_percent).toBe(19.58);
+    expect(updated.day_change_percent).toBe(5);
+  });
+});
+

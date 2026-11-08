@@ -3,6 +3,10 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { MoreHorizontal, Plus, Star, Trash2 } from 'lucide-react';
+import { FlashValue } from '@/features/markets/components/FlashValue';
+import { LiveIndicator } from '@/features/markets/components/LiveIndicator';
+import { useLiveQuotes } from '@/features/markets/hooks/useLiveQuotes';
+import type { LiveQuote } from '@/features/markets/store/useLiveQuoteStore';
 import { formatMoney, formatPercent } from '@/lib/format';
 import { ROUTES, instrumentHref } from '@/lib/routes';
 import { useUIStore } from '@/store/useUIStore';
@@ -37,6 +41,10 @@ export function Watchlist() {
 
   // The selected list, falling back to the first one (e.g. after the selected list was deleted).
   const selected = watchlists.find((list) => list.id === selectedId) ?? watchlists[0] ?? null;
+  // Live prices for the rows on screen (story NW-09).
+  const { quotes: liveQuotes, status: streamStatus } = useLiveQuotes(
+    selected ? selected.items.map((item) => item.orderbook_id) : [],
+  );
 
   const handleCreate = async (name: string): Promise<void> => {
     try {
@@ -67,6 +75,7 @@ export function Watchlist() {
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <Star className="text-yellow-500" aria-hidden="true" />
         <h1 className="text-2xl font-bold text-white">Watchlist</h1>
+        <LiveIndicator status={streamStatus} />
         {watchlists.length > 0 && !creating && (
           <button
             type="button"
@@ -143,7 +152,7 @@ export function Watchlist() {
           </div>
 
           <div id={`${tabsId}-panel`} role="tabpanel" aria-labelledby={`${tabsId}-tab-${selected.id}`}>
-            <WatchlistPanel key={selected.id} list={selected} />
+            <WatchlistPanel key={selected.id} list={selected} liveQuotes={liveQuotes} />
           </div>
         </>
       )}
@@ -153,12 +162,20 @@ export function Watchlist() {
 
 interface WatchlistPanelProps {
   list: WatchlistModel;
+  /** Streamed quotes by orderbook_id; a row shows its live price and day change once one arrived. */
+  liveQuotes: Readonly<Record<string, LiveQuote>>;
+}
+
+/** The row's price and day change: the streamed quote when there is one, else the list's own snapshot. */
+function rowPrices(item: WatchlistItem, live: LiveQuote | undefined): { price: number | null; change: number | null } {
+  if (live) return { price: live.quote.last, change: live.quote.change_percent };
+  return { price: item.last_price, change: item.change_percent };
 }
 
 type PanelMode = 'view' | 'rename' | 'confirm-delete';
 
 /** The selected list: its actions menu, rename form or delete confirmation, and the items table. */
-function WatchlistPanel({ list }: WatchlistPanelProps) {
+function WatchlistPanel({ list, liveQuotes }: WatchlistPanelProps) {
   const { renameWatchlist, deleteWatchlist, removeItem } = useWatchlistStore();
   const { addToast } = useUIStore();
   const [mode, setMode] = useState<PanelMode>('view');
@@ -321,34 +338,38 @@ function WatchlistPanel({ list }: WatchlistPanelProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#27272a]">
-              {list.items.map((item) => (
-                <tr key={item.orderbook_id} className="hover:bg-[#111111] transition-colors">
-                  <td className="px-4 md:px-6 py-3">
-                    <Link href={instrumentHref(item.orderbook_id)} className="font-medium text-white hover:underline">
-                      {item.name}
-                    </Link>
-                    <span className="block text-xs text-[#71717a]">{item.symbol || item.orderbook_id}</span>
-                  </td>
-                  <td className="px-4 md:px-6 py-3 text-right text-white whitespace-nowrap">
-                    {item.last_price === null ? MISSING : formatMoney(item.last_price)}
-                  </td>
-                  <td className={`px-4 md:px-6 py-3 text-right whitespace-nowrap ${changeClass(item.change_percent)}`}>
-                    {item.change_percent === null ? MISSING : formatPercent(item.change_percent)}
-                  </td>
-                  <td className="px-4 md:px-6 py-3 text-right">
-                    <button
-                      type="button"
-                      aria-label={`Remove ${item.name}`}
-                      disabled={removing === item.orderbook_id}
-                      aria-busy={removing === item.orderbook_id}
-                      onClick={() => void handleRemove(item)}
-                      className="rounded-lg p-2 text-red-500 opacity-80 hover:bg-[#27272a] hover:opacity-100 disabled:opacity-40"
-                    >
-                      <Trash2 size={16} aria-hidden="true" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {list.items.map((item) => {
+                const live = liveQuotes[item.orderbook_id];
+                const { price, change } = rowPrices(item, live);
+                return (
+                  <tr key={item.orderbook_id} className="hover:bg-[#111111] transition-colors">
+                    <td className="px-4 md:px-6 py-3">
+                      <Link href={instrumentHref(item.orderbook_id)} className="font-medium text-white hover:underline">
+                        {item.name}
+                      </Link>
+                      <span className="block text-xs text-[#71717a]">{item.symbol || item.orderbook_id}</span>
+                    </td>
+                    <td className="px-4 md:px-6 py-3 text-right text-white whitespace-nowrap tabular-nums">
+                      <FlashValue live={live}>{price === null ? MISSING : formatMoney(price)}</FlashValue>
+                    </td>
+                    <td className={`px-4 md:px-6 py-3 text-right whitespace-nowrap tabular-nums ${changeClass(change)}`}>
+                      {change === null ? MISSING : formatPercent(change)}
+                    </td>
+                    <td className="px-4 md:px-6 py-3 text-right">
+                      <button
+                        type="button"
+                        aria-label={`Remove ${item.name}`}
+                        disabled={removing === item.orderbook_id}
+                        aria-busy={removing === item.orderbook_id}
+                        onClick={() => void handleRemove(item)}
+                        className="rounded-lg p-2 text-red-500 opacity-80 hover:bg-[#27272a] hover:opacity-100 disabled:opacity-40"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

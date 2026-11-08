@@ -7,6 +7,8 @@ type FetchMock = Mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<
 
 const portfolio: Portfolio = {
   cash: 98996.5,
+  reserved_cash: 0,
+  buying_power: 98996.5,
   holdings_value: 1100,
   vault_value: 0,
   total_equity: 100096.5,
@@ -25,6 +27,7 @@ const portfolio: Portfolio = {
       unrealized_pnl_percent: 9.62,
       day_change_percent: 1.25,
       weight: 100,
+      reserved_quantity: 0,
     },
   ],
   top_movers: [],
@@ -118,6 +121,8 @@ describe('usePortfolioStore', () => {
   it('keeps an empty portfolio as ready with no positions', async () => {
     const fresh: Portfolio = {
       cash: 100000,
+      reserved_cash: 0,
+      buying_power: 100000,
       holdings_value: 0,
       vault_value: 0,
       total_equity: 100000,
