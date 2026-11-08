@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useId, useState, type ChangeEvent } from 'react';
 import { getQuote } from '@/features/markets/api/market';
+import { pickQuote, useLiveQuote } from '@/features/markets/hooks/useLiveQuotes';
 import type { Quote } from '@/features/markets/types';
 import { ApiRequestError } from '@/lib/api';
 import { formatMoney, formatQuantity } from '@/lib/format';
@@ -16,7 +17,7 @@ interface OrderTicketProps {
   orderbookId: string;
 }
 
-/** How often the ticket refreshes its live quote. */
+/** How often the ticket polls its quote while the live stream (story NW-09) is not delivering. */
 const QUOTE_REFRESH_MS = 5_000;
 
 const MISSING = '—';
@@ -96,7 +97,10 @@ export function OrderTicket({ orderbookId }: OrderTicketProps) {
   const [quoteState, setQuoteState] = useState<QuoteState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { live, status: streamStatus } = useLiveQuote(orderbookId);
+  const streaming = streamStatus === 'live';
 
+  // One quote on mount, then polling only while the stream is down; once it is live, it pushes every change.
   useEffect(() => {
     let active = true;
     const load = () => {
@@ -116,15 +120,15 @@ export function OrderTicket({ orderbookId }: OrderTicketProps) {
         });
     };
     load();
-    const timer = setInterval(load, QUOTE_REFRESH_MS);
+    const timer = streaming ? null : setInterval(load, QUOTE_REFRESH_MS);
     return () => {
       active = false;
-      clearInterval(timer);
+      if (timer !== null) clearInterval(timer);
     };
-  }, [orderbookId]);
+  }, [orderbookId, streaming]);
 
   const current = quoteState?.id === orderbookId ? quoteState : null;
-  const quote = current?.quote ?? null;
+  const quote = pickQuote(live, streamStatus, current?.quote ?? null);
   const quantity = parseQuantity(quantityText);
   const limitPrice = parsePrice(limitPriceText);
   const stopPrice = parsePrice(stopPriceText);
@@ -212,19 +216,27 @@ export function OrderTicket({ orderbookId }: OrderTicketProps) {
       : `${formatQuantity(reservation.shares)} shares`
     : MISSING;
 
+  const bidAskRows: ReadonlyArray<{ label: string; value: string; emphasis?: boolean }> = [
+    { label: 'Bid', value: quote ? formatMoney(quote.bid) : MISSING },
+    { label: 'Ask', value: quote ? formatMoney(quote.ask) : MISSING },
+  ];
+
   const rows: ReadonlyArray<{ label: string; value: string; emphasis?: boolean }> =
     orderType === 'MARKET'
       ? [
+          ...bidAskRows,
           { label: 'Price', value: preview ? formatMoney(preview.price) : MISSING },
           { label: 'Commission', value: preview ? formatMoney(preview.commission) : MISSING },
           { label: 'Total', value: preview ? formatMoney(preview.total) : MISSING, emphasis: true },
         ]
       : orderType === 'LIMIT'
         ? [
+            ...bidAskRows,
             { label: 'Limit price', value: limitPrice !== null ? formatMoney(limitPrice) : MISSING },
             { label: 'Reserved amount', value: reservationText, emphasis: true },
           ]
         : [
+            ...bidAskRows,
             { label: 'Stop price', value: stopPrice !== null ? formatMoney(stopPrice) : MISSING },
             { label: 'Reserved amount', value: reservationText, emphasis: true },
           ];
@@ -339,7 +351,7 @@ export function OrderTicket({ orderbookId }: OrderTicketProps) {
             />
           </div>
 
-          {current?.failed && !quote && (
+          {current?.failed && !quote && !streaming && (
             <p role="status" className="text-xs text-[#71717a]">
               Live prices are unavailable right now.
             </p>
