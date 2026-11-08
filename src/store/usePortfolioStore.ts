@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
 import type { DashboardResponse } from '@/features/portfolio/types';
-import type { Watchlist } from '@/features/watchlist/types';
 
 export interface Holding {
   ticker: string;
@@ -18,20 +17,15 @@ interface PortfolioState {
   cash: number;
   portfolioValue: number;
   holdings: Holding[];
-  watchlist: string[];
-  watchlistId: number | null;
   fetchDashboard: () => Promise<void>;
-  fetchWatchlists: () => Promise<void>;
-  addToWatchlist: (ticker: string, name?: string) => Promise<void>;
-  removeFromWatchlist: (stockId: string) => Promise<void>;
 }
 
-export const usePortfolioStore = create<PortfolioState>((set, get) => ({
+// Watchlists live in src/features/watchlist/store/useWatchlistStore.ts (story NW-06).
+
+export const usePortfolioStore = create<PortfolioState>((set) => ({
   cash: 0,
   portfolioValue: 0,
   holdings: [],
-  watchlist: [],
-  watchlistId: null,
 
   fetchDashboard: async () => {
     try {
@@ -55,59 +49,8 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
         holdings
       });
 
-      // Also fetch watchlists on dashboard load
-      await get().fetchWatchlists();
     } catch (e) {
       console.error('Failed to fetch dashboard', e);
-    }
-  },
-
-  fetchWatchlists: async () => {
-    try {
-      const data = await api<Watchlist[]>('watchlists');
-      if (data.length > 0) {
-        const items = data[0].items || [];
-        const symbols = items.map((i) => i.stock.symbol);
-        set({ watchlist: symbols, watchlistId: data[0].id });
-      } else {
-        set({ watchlist: [], watchlistId: null });
-      }
-    } catch (e) {
-      console.error('Failed to fetch watchlists', e);
-    }
-  },
-
-  addToWatchlist: async (ticker, name = ticker) => {
-    try {
-      let wlId = get().watchlistId;
-      if (!wlId) {
-        const newWl = await api<Watchlist>('watchlists', {
-          method: 'POST',
-          body: JSON.stringify({ name: 'Default' })
-        });
-        wlId = newWl.id;
-        set({ watchlistId: wlId });
-      }
-
-      await api(`watchlists/${wlId}/items`, {
-        method: 'POST',
-        body: JSON.stringify({ symbol: ticker, name })
-      });
-      await get().fetchWatchlists();
-    } catch (e) {
-      console.error(e);
-      throw e;
-    }
-  },
-
-  removeFromWatchlist: async (stockId) => {
-    const wlId = get().watchlistId;
-    if (!wlId) return;
-    try {
-      await api(`watchlists/${wlId}/items/${stockId}`, { method: 'DELETE' });
-      await get().fetchWatchlists();
-    } catch (e) {
-      console.error(e);
     }
   }
 }));

@@ -1,119 +1,109 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { TopMovers } from '../TopMovers';
-import { searchInstruments } from '@/features/markets/api/market';
-import type { InstrumentSearchResponse, InstrumentSummary } from '@/features/markets/types';
-import { usePortfolioStore } from '@/store/usePortfolioStore';
+import { useWatchlistStore } from '@/features/watchlist/store/useWatchlistStore';
+import type { Watchlist, WatchlistItem } from '@/features/watchlist/types';
 import { useUIStore } from '@/store/useUIStore';
 
-vi.mock('@/features/markets/api/market', () => ({
-  searchInstruments: vi.fn<(query: string) => Promise<InstrumentSearchResponse>>(),
-}));
-
-const search = vi.mocked(searchInstruments);
-
-const initialPortfolio = usePortfolioStore.getState();
+const initialWatchlists = useWatchlistStore.getState();
 const initialUI = useUIStore.getState();
 
-function instrument(overrides: Partial<InstrumentSummary>): InstrumentSummary {
+function item(overrides: Partial<WatchlistItem>): WatchlistItem {
   return {
     orderbook_id: 'SIM-XXXX',
     symbol: 'XXXX',
     name: 'Example AB',
-    currency: 'SEK',
-    market: 'XSTO',
     last_price: 100,
     change_percent: 0,
+    added_at: '2026-11-08T09:00:00Z',
     ...overrides,
   };
 }
 
-function page(...items: InstrumentSummary[]): InstrumentSearchResponse {
-  return { items, next_cursor: null };
+function list(id: number, items: WatchlistItem[]): Watchlist {
+  return { id, name: `List ${id}`, items, created_at: '2026-11-08T09:00:00Z' };
 }
+
+let fetchWatchlists: Mock<() => Promise<void>>;
 
 describe('TopMovers', () => {
   beforeEach(() => {
-    search.mockReset();
+    fetchWatchlists = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    useWatchlistStore.setState({ fetchWatchlists });
   });
 
   afterEach(() => {
-    usePortfolioStore.setState(initialPortfolio, true);
+    // Unmount first: restoring the real store actions would otherwise re-run the components' effects.
+    cleanup();
+    useWatchlistStore.setState(initialWatchlists, true);
     useUIStore.setState(initialUI, true);
   });
 
   it('asks signed-out visitors to sign in and fetches nothing', () => {
     useUIStore.setState({ isAuthenticated: false });
-    usePortfolioStore.setState({ watchlist: ['FJRD'] });
 
     render(<TopMovers />);
 
     expect(screen.getByText('Sign in to see watchlist movers.')).toBeInTheDocument();
-    expect(search).not.toHaveBeenCalled();
+    expect(fetchWatchlists).not.toHaveBeenCalled();
   });
 
-  it('shows the empty-watchlist state and fetches nothing', () => {
+  it('loads the watchlists when signed in and shows a spinner meanwhile', () => {
     useUIStore.setState({ isAuthenticated: true });
-    usePortfolioStore.setState({ watchlist: [] });
+    useWatchlistStore.setState({ status: 'loading', watchlists: [] });
+
+    render(<TopMovers />);
+
+    expect(fetchWatchlists).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Loading movers')).toBeInTheDocument();
+  });
+
+  it('shows the empty-watchlist state when no list has a priced item', () => {
+    useUIStore.setState({ isAuthenticated: true });
+    useWatchlistStore.setState({ status: 'ready', watchlists: [list(1, []), list(2, [item({ last_price: null, change_percent: null })])] });
 
     render(<TopMovers />);
 
     expect(screen.getByText('Your watchlist is empty.')).toBeInTheDocument();
-    expect(search).not.toHaveBeenCalled();
   });
 
-  it('lists movers sorted by change with formatted price and percent', async () => {
+  it('lists each instrument once across lists, biggest change first, with formatted price and percent', () => {
     useUIStore.setState({ isAuthenticated: true });
-    usePortfolioStore.setState({ watchlist: ['fjrd', 'NORD', 'AAPL'] });
-    search.mockImplementation(async (query) => {
-      switch (query) {
-        case 'fjrd':
-          // The exact symbol match wins over the first hit, ignoring case.
-          return page(
-            instrument({ symbol: 'FJRD-B', last_price: 1, change_percent: 9 }),
-            instrument({ symbol: 'FJRD', last_price: 100000, change_percent: 1.25 }),
-          );
-        case 'NORD':
-          return page(instrument({ symbol: 'NORD', last_price: 42.5, change_percent: -0.5 }));
-        case 'AAPL':
-          // No exact match: falls back to the first hit.
-          return page(instrument({ symbol: 'AAPL.US', currency: 'USD', last_price: 189.9, change_percent: 3 }));
-        default:
-          return page();
-      }
+    useWatchlistStore.setState({
+      status: 'ready',
+      watchlists: [
+        list(1, [
+          item({ orderbook_id: 'SIM-NVE', symbol: 'NVE', last_price: 100, change_percent: -0.5 }),
+          item({ orderbook_id: 'SIM-FJRD', symbol: 'FJRD', last_price: 100000, change_percent: 1.25 }),
+        ]),
+        list(2, [
+          item({ orderbook_id: 'SIM-NVE', symbol: 'NVE', last_price: 100, change_percent: -0.5 }),
+          item({ orderbook_id: 'SIM-BALT', symbol: 'BALT', last_price: 42.5, change_percent: 3 }),
+        ]),
+      ],
     });
 
     render(<TopMovers />);
 
-    await screen.findByText('NORD');
-    const list = screen.getByRole('list', { name: 'Watchlist movers' });
-    const rows = within(list).getAllByRole('listitem');
+    const rows = within(screen.getByRole('list', { name: 'Watchlist movers' })).getAllByRole('listitem');
     expect(rows.map((row) => row.textContent)).toEqual([
-      'AAPL189.90 USD+3.00%',
-      'fjrd100,000.00 SEK+1.25%',
-      'NORD42.50 SEK-0.50%',
+      'BALT42.50 SEK+3.00%',
+      'FJRD100,000.00 SEK+1.25%',
+      'NVE100.00 SEK-0.50%',
     ]);
-    expect(search).toHaveBeenCalledTimes(3);
-    expect(screen.queryByText(/\$/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'BALT' })).toHaveAttribute('href', '/markets/SIM-BALT');
   });
 
-  it('skips a ticker whose lookup fails or finds nothing', async () => {
+  it('shows at most five movers', () => {
     useUIStore.setState({ isAuthenticated: true });
-    usePortfolioStore.setState({ watchlist: ['BAD', 'NONE', 'NORD'] });
-    search.mockImplementation(async (query) => {
-      if (query === 'BAD') throw new Error('upstream unavailable');
-      if (query === 'NONE') return page();
-      return page(instrument({ symbol: 'NORD', last_price: 42.5, change_percent: -0.5 }));
-    });
+    const items = Array.from({ length: 7 }, (_, i) => item({ orderbook_id: `SIM-${i}`, symbol: `S${i}`, change_percent: i }));
+    useWatchlistStore.setState({ status: 'ready', watchlists: [list(1, items)] });
 
     render(<TopMovers />);
 
-    await screen.findByText('NORD');
-    const list = screen.getByRole('list', { name: 'Watchlist movers' });
-    const rows = within(list).getAllByRole('listitem');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toHaveTextContent('NORD');
-    expect(screen.queryByText('BAD')).toBeNull();
-    expect(screen.queryByText('NONE')).toBeNull();
+    const rows = within(screen.getByRole('list', { name: 'Watchlist movers' })).getAllByRole('listitem');
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toHaveTextContent('S6');
   });
 });
