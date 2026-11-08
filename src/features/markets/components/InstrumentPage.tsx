@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { formatMoney, formatPercent } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
+import { AiBriefCard } from '@/features/ai/components/AiBriefCard';
 import { OrderTicket } from '@/features/trading/components/OrderTicket';
 import { AddToWatchlistMenu } from '@/features/watchlist/components/AddToWatchlistMenu';
 import { getInstrumentDetails, getQuote } from '../api/market';
@@ -165,6 +166,9 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
             Updated <time dateTime={quote.updated_at}>{formatUpdatedAt(quote.updated_at)}</time>
           </p>
         </section>
+
+        {/* High on the page, so the button stays clear of the fixed cookie banner and toasts at the bottom. */}
+        <AiBriefCard orderbookId={orderbookId} />
 
         <OrderTicket orderbookId={orderbookId} />
 
