@@ -382,6 +382,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/instruments/{orderbook_id}/brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Plain-language AI brief of one instrument
+         * @description Explains the instrument's numbers and risks for a beginner. Served from today's shared cache when it exists
+         *     (`cached: true`, no model call, no usage). Otherwise the brief is generated through the LLM gateway, which
+         *     checks the caller's daily token budget first and records the call in the usage ledger. Concurrent requests
+         *     for the same uncached brief make one model call. An unknown instrument fails before any model call.
+         */
+        get: operations["getInstrumentBrief"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The signed-in user's LLM usage and budget today */
+        get: operations["getAIUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -391,7 +431,7 @@ export interface components {
          *     else (enforced by `internal/handlers/openapi_parity_test.go`).
          * @enum {string}
          */
-        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED";
+        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "AI_BUDGET_EXCEEDED" | "AI_REFUSED" | "AI_UNAVAILABLE";
         /** @description The body of every error response. */
         Error: {
             /** @description Human-readable message. */
@@ -436,6 +476,12 @@ export interface components {
              * @enum {string}
              */
             market_data_provider: "avanza" | "simulated";
+            /**
+             * @description The active LLM adapter behind the AI gateway (LLM_PROVIDER, backend default anthropic). `fake` answers
+             *     deterministically and needs no API key; dev/test only.
+             * @enum {string}
+             */
+            llm_provider: "anthropic" | "fake";
         };
         /** @description One instrument search hit. Prices are in `currency`, rounded half-up to 2 decimals. */
         InstrumentSummary: {
@@ -719,6 +765,96 @@ export interface components {
             positions: components["schemas"]["PortfolioPosition"][];
             top_movers: components["schemas"]["PortfolioPosition"][];
         };
+        /**
+         * @description An AI feature that calls the LLM gateway. Each one has its own versioned prompt.
+         * @enum {string}
+         */
+        AIFeature: "instrument_brief";
+        /** @description One number of the instrument, in plain language. */
+        BriefMetric: {
+            /** @example P/E ratio */
+            metric: string;
+            /**
+             * @description The value as shown to the user, already formatted.
+             * @example 14.25
+             */
+            value: string;
+            explanation: string;
+        };
+        /** @description The model's structured answer (validated against this schema before it is stored). */
+        Brief: {
+            summary: string;
+            what_the_numbers_say: components["schemas"]["BriefMetric"][];
+            risks: string[];
+            beginner_takeaway: string;
+        };
+        /**
+         * @description A plain-language AI brief of one instrument. Briefs are cached per instrument, UTC day and prompt version and
+         *     shared by every user: the first request of the day generates it (`cached: false`), later ones reuse it.
+         */
+        InstrumentBrief: {
+            /** @example SIM-FJRD */
+            orderbook_id: string;
+            /**
+             * Format: date-time
+             * @description When the brief was generated (UTC).
+             */
+            generated_at: string;
+            /**
+             * @description The model that wrote the brief (`fake` with LLM_PROVIDER=fake).
+             * @example claude-opus-5-5
+             */
+            model: string;
+            /**
+             * @description The prompt template version, `<feature>.v<N>`.
+             * @example instrument_brief.v1
+             */
+            prompt_version: string;
+            /** @description True when the brief came from today's cache instead of a new model call. */
+            cached: boolean;
+            /** @enum {string} */
+            disclaimer: "AI-generated · educational, not financial advice";
+            brief: components["schemas"]["Brief"];
+        };
+        AIFeatureUsage: {
+            feature: components["schemas"]["AIFeature"];
+            /**
+             * Format: int64
+             * @description Model calls today, failed and refused ones included. Cached answers are not calls.
+             */
+            calls: number;
+            /**
+             * Format: int64
+             * @description Uncached input tokens.
+             */
+            input_tokens: number;
+            /** Format: int64 */
+            output_tokens: number;
+        };
+        /**
+         * @description The signed-in user's LLM usage for the current UTC day. `used_tokens` counts input, output, cache-read and
+         *     cache-write tokens; the budget resets at 00:00 UTC. `by_feature` lists every feature, sorted by name.
+         */
+        AIUsage: {
+            /**
+             * Format: date
+             * @description The UTC day, YYYY-MM-DD.
+             */
+            date: string;
+            /**
+             * Format: int64
+             * @description The daily per-user token budget (AI_DAILY_TOKEN_BUDGET, default 200000).
+             */
+            budget_tokens: number;
+            /** Format: int64 */
+            used_tokens: number;
+            /**
+             * Format: int64
+             * @description max(0, budget_tokens - used_tokens).
+             */
+            remaining_tokens: number;
+            by_feature: components["schemas"]["AIFeatureUsage"][];
+        };
     };
     responses: {
         /** @description Missing, unknown or expired session. */
@@ -841,6 +977,51 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The user's daily token budget is used up; it resets at 00:00 UTC. */
+        AIBudgetExceeded: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "daily AI token budget exceeded, try again tomorrow",
+                 *       "code": "AI_BUDGET_EXCEEDED"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The model declined to answer (also after the server-side fallback). */
+        AIRefused: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "the AI declined to answer this request",
+                 *       "code": "AI_REFUSED"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The LLM provider failed, timed out, was cut off at max_tokens or returned an invalid answer. */
+        AIUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "the AI service is unavailable, please try again later",
+                 *       "code": "AI_UNAVAILABLE"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         OrderbookID: string;
@@ -872,6 +1053,7 @@ export interface operations {
                      *       "status": "ok",
                      *       "version": "0.0.0",
                      *       "market_data_provider": "simulated",
+                     *       "llm_provider": "fake",
                      *       "features": {
                      *         "guest_auth": true,
                      *         "sim_control": true
@@ -1863,6 +2045,95 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["Portfolio"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getInstrumentBrief: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderbook_id: components["parameters"]["OrderbookID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The brief. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "orderbook_id": "SIM-FJRD",
+                     *       "generated_at": "2026-11-08T09:30:00Z",
+                     *       "model": "fake",
+                     *       "prompt_version": "instrument_brief.v1",
+                     *       "cached": false,
+                     *       "disclaimer": "AI-generated · educational, not financial advice",
+                     *       "brief": {
+                     *         "summary": "FAKE: Fjord Robotics (FJRD) trades at 100.00 SEK.",
+                     *         "what_the_numbers_say": [
+                     *           {
+                     *             "metric": "Last price",
+                     *             "value": "100.00 SEK",
+                     *             "explanation": "FAKE: the price of one FJRD share."
+                     *           }
+                     *         ],
+                     *         "risks": [
+                     *           "FAKE: Industrials companies move with the business cycle."
+                     *         ],
+                     *         "beginner_takeaway": "FAKE: learn what Fjord Robotics does before you trade FJRD."
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["InstrumentBrief"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["InstrumentNotFound"];
+            422: components["responses"]["AIRefused"];
+            429: components["responses"]["AIBudgetExceeded"];
+            502: components["responses"]["MarketDataUnavailable"];
+            503: components["responses"]["AIUnavailable"];
+        };
+    };
+    getAIUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Today's usage (UTC). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "date": "2026-11-08",
+                     *       "budget_tokens": 200000,
+                     *       "used_tokens": 412,
+                     *       "remaining_tokens": 199588,
+                     *       "by_feature": [
+                     *         {
+                     *           "feature": "instrument_brief",
+                     *           "calls": 1,
+                     *           "input_tokens": 350,
+                     *           "output_tokens": 62
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AIUsage"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
