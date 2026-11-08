@@ -15,10 +15,10 @@ describe('NAV_ITEMS', () => {
     ]);
   });
 
-  it('pins Settings and Help center to the footer', () => {
+  it('pins Settings and Learn to the footer', () => {
     expect(NAV_ITEMS.footer.map((item) => [item.label, item.href])).toEqual([
       ['Settings', ROUTES.settings],
-      ['Help center', ROUTES.help],
+      ['Learn', ROUTES.learn],
     ]);
   });
 

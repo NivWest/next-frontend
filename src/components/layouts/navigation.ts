@@ -1,13 +1,13 @@
 import {
-	BarChart3,
-	HelpCircle,
-	LayoutDashboard,
-	LineChart,
-	ListOrdered,
-	Settings,
-	Star,
-	Trophy,
-	Vault,
+  BarChart3,
+  BookOpen,
+  LayoutDashboard,
+  LineChart,
+  ListOrdered,
+  Settings,
+  Star,
+  Trophy,
+  Vault,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ROUTES } from '@/lib/routes';
@@ -37,7 +37,7 @@ export const NAV_ITEMS: NavGroups = {
   ],
   footer: [
     { label: 'Settings', href: ROUTES.settings, icon: Settings },
-    { label: 'Help center', href: ROUTES.help, icon: HelpCircle },
+    { label: 'Learn', href: ROUTES.learn, icon: BookOpen },
   ],
 };
 
