@@ -799,7 +799,7 @@ export interface components {
             orderbook_id: string | null;
             /** @description Market value at the last price (cash itself for the cash slice), SEK with 2 decimals. */
             value: number;
-            /** @description Percent of total equity, 2 decimals. The weights of all slices sum to 100. */
+            /** @description Percent of total equity, 2 decimals. The weights of all slices sum to exactly 100 (the rounding remainder goes to the largest slice); all 0 when total equity is 0. */
             weight: number;
         };
         /**
