@@ -222,6 +222,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live quotes over Server-Sent Events
+         * @description Streams live quotes for up to 50 instruments as `text/event-stream`. Every request parameter is validated and
+         *     every id is resolved **before** the stream starts, so a bad request gets a normal JSON error instead.
+         *
+         *     Events (each `data` line is one JSON document):
+         *
+         *     - `event: quote`: `data` is a `Quote` (same schema as `GET /market/instruments/{orderbook_id}/quote`). On
+         *       connect the stream sends the current quote of every requested id at once; afterwards it sends a quote only
+         *       when it changed (last, bid, ask or change_percent). The server polls the provider once per instrument every
+         *       `MARKET_STREAM_INTERVAL` (backend default 2s, compose 1s), shared by all streams watching it.
+         *     - `event: error`: `data` is an `Error`. Sent just before the server ends the stream (e.g. on shutdown); the
+         *       client should reconnect.
+         *     - `: ping` comment lines every `MARKET_STREAM_HEARTBEAT` (default 10s) keep idle connections open.
+         *
+         *     The first message is `retry: 3000` (EventSource reconnect delay in ms). Responses carry
+         *     `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` so proxies don't buffer them.
+         *     Connecting counts as one request against the shared per-IP `/market` rate limit, and an IP can hold at most
+         *     `MARKET_STREAM_MAX_PER_IP` (default 5) streams at the same time. A slow client never blocks others: per
+         *     instrument it only keeps the latest undelivered quote.
+         */
+        get: operations["streamQuotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sim/instruments/{orderbook_id}/price": {
         parameters: {
             query?: never;
@@ -1279,6 +1316,73 @@ export interface operations {
             400: components["responses"]["ValidationError"];
             404: components["responses"]["InstrumentNotFound"];
             429: components["responses"]["RateLimited"];
+            502: components["responses"]["MarketDataUnavailable"];
+        };
+    };
+    streamQuotes: {
+        parameters: {
+            query: {
+                /**
+                 * @description Comma-separated orderbook ids, 1 to 50 entries. Entries are trimmed, blank entries are ignored and
+                 *     duplicates are streamed once.
+                 * @example SIM-FJRD,SIM-NVE
+                 */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event stream. It stays open until the client disconnects or the server shuts down. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example retry: 3000
+                     *
+                     *     event: quote
+                     *     data: {"orderbook_id":"SIM-FJRD","symbol":"FJRD","last":123.45,"bid":123.33,"ask":123.57,"change_percent":1.25,"currency":"SEK","updated_at":"2026-11-08T09:41:00Z"}
+                     *
+                     *     : ping
+                     */
+                    "text/event-stream": string;
+                };
+            };
+            /** @description `ids` is missing, has no non-blank entry, or has more than 50 entries. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "ids must list at most 50 orderbook ids",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["InstrumentNotFound"];
+            /** @description Over the per-IP `/market` rate limit, or this IP already holds `MARKET_STREAM_MAX_PER_IP` open streams. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "too many open streams from this address",
+                     *       "code": "RATE_LIMITED"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             502: components["responses"]["MarketDataUnavailable"];
         };
     };
