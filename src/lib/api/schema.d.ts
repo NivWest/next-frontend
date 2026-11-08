@@ -382,6 +382,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/portfolio/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The signed-in user's equity over time
+         * @description Equity snapshots of the signed-in user in the requested range, oldest first (see HistoryRange for the
+         *     downsampling). A snapshot is taken after every fill and every SNAPSHOT_INTERVAL (default 1h) for users with
+         *     at least one order; right after a fill the last point equals GET /portfolio's total_equity.
+         */
+        get: operations["getPortfolioHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/portfolio/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Risk-adjusted performance and allocation of the signed-in user
+         * @description Total return from the 100,000 SEK start, annualized volatility, Sharpe ratio and maximum drawdown from the
+         *     daily equity series, and the allocation of total equity across positions and cash (see PortfolioAnalytics).
+         */
+        get: operations["getPortfolioAnalytics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -718,6 +761,74 @@ export interface components {
             realized_pnl: number;
             positions: components["schemas"]["PortfolioPosition"][];
             top_movers: components["schemas"]["PortfolioPosition"][];
+        };
+        /**
+         * @description Window of GET /portfolio/history, ending now: 1d = the last 24 hours, raw snapshots; 1w = the last 7 days and
+         *     1m = the last 30 days, bucketed hourly (the last snapshot of each UTC hour); all = every snapshot, bucketed
+         *     daily (the last snapshot of each UTC day).
+         * @enum {string}
+         */
+        HistoryRange: "1d" | "1w" | "1m" | "all";
+        /** @description One equity snapshot (cash + holdings at the last price + vault), SEK with 2 decimals. */
+        EquityPoint: {
+            /**
+             * Format: date-time
+             * @description When the snapshot was taken (RFC 3339, UTC).
+             */
+            t: string;
+            /** @description Total equity in SEK, 2 decimals. */
+            equity: number;
+        };
+        /**
+         * @description The signed-in user's equity over the requested range, oldest first. Snapshots are taken after every fill and
+         *     every SNAPSHOT_INTERVAL (default 1h) for users with at least one order, so a user without orders has no points.
+         */
+        EquityHistory: {
+            range: components["schemas"]["HistoryRange"];
+            /** @description Oldest first; empty (never null) when there are no snapshots in the range. */
+            points: components["schemas"]["EquityPoint"][];
+        };
+        /**
+         * @description One slice of the allocation: an open position (label = symbol) or the cash (label "Cash", orderbook_id null).
+         *     weight = value / total_equity × 100.
+         */
+        AllocationSlice: {
+            /** @description The instrument's symbol, or "Cash". */
+            label: string;
+            /** @description The position's orderbook id; null for the cash slice. */
+            orderbook_id: string | null;
+            /** @description Market value at the last price (cash itself for the cash slice), SEK with 2 decimals. */
+            value: number;
+            /** @description Percent of total equity, 2 decimals. The weights of all slices sum to 100. */
+            weight: number;
+        };
+        /**
+         * @description Risk-adjusted performance of the signed-in user. Computed from the daily series (the last equity snapshot of
+         *     each UTC day, oldest first) with daily returns r_d = equity_d / equity_(d-1) − 1:
+         *     - total_return_pct = (total_equity / 100000 − 1) × 100, from the live portfolio and the 100,000 SEK start;
+         *     - volatility_annualized_pct = stdev(r_d) × √252 × 100 (sample standard deviation, n − 1);
+         *     - sharpe_ratio = (mean(r_d) − rf / 252) / stdev(r_d) × √252 with rf = RISK_FREE_RATE (default 0.02);
+         *       null also when stdev(r_d) is 0;
+         *     - max_drawdown_pct = the largest peak-to-trough decline of the daily equity, as a negative percentage
+         *       (0 when equity never fell).
+         *     Volatility, Sharpe and drawdown need at least 5 daily returns (data_points ≥ 5); below that they are null and
+         *     sufficient_data is false. Percentages and the ratio are rounded half-up to 2 decimals.
+         */
+        PortfolioAnalytics: {
+            /** @description Percent, 2 decimals (1.25 means +1.25%). */
+            total_return_pct: number;
+            /** @description Annualized volatility in percent, 2 decimals; null without sufficient data. */
+            volatility_annualized_pct: number | null;
+            /** @description Annualized Sharpe ratio, 2 decimals; null without sufficient data or when volatility is 0. */
+            sharpe_ratio: number | null;
+            /** @description Largest peak-to-trough decline in percent (≤ 0), 2 decimals; null without sufficient data. */
+            max_drawdown_pct: number | null;
+            /** @description True when data_points ≥ 5. */
+            sufficient_data: boolean;
+            /** @description Number of daily returns in the daily series (days with a snapshot − 1, never below 0). */
+            data_points: number;
+            /** @description Positions by value desc (then orderbook id asc), then the cash slice, which is always present. */
+            allocation: components["schemas"]["AllocationSlice"][];
         };
     };
     responses: {
@@ -1863,6 +1974,81 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["Portfolio"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getPortfolioHistory: {
+        parameters: {
+            query?: {
+                /** @description Defaults to 1d. */
+                range?: components["schemas"]["HistoryRange"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The equity history. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "range": "1d",
+                     *       "points": [
+                     *         {
+                     *           "t": "2026-11-08T09:00:00Z",
+                     *           "equity": 100000
+                     *         },
+                     *         {
+                     *           "t": "2026-11-08T09:41:12Z",
+                     *           "equity": 99964.97
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EquityHistory"];
+                };
+            };
+            /** @description range is not one of 1d, 1w, 1m, all. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "range must be one of 1d, 1w, 1m, all",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getPortfolioAnalytics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The analytics. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioAnalytics"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
