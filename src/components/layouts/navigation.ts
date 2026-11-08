@@ -1,6 +1,6 @@
 import {
   BarChart3,
-  HelpCircle,
+  BookOpen,
   LayoutDashboard,
   LineChart,
   ListOrdered,
@@ -35,7 +35,7 @@ export const NAV_ITEMS: NavGroups = {
   ],
   footer: [
     { label: 'Settings', href: ROUTES.settings, icon: Settings },
-    { label: 'Help center', href: ROUTES.help, icon: HelpCircle },
+    { label: 'Learn', href: ROUTES.learn, icon: BookOpen },
   ],
 };
 

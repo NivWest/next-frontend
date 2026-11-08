@@ -149,7 +149,7 @@ describe('Sidebar', () => {
         ['Analytics', '/analytics'],
         ['Markets', '/markets'],
         ['Settings', '/settings'],
-        ['Help center', '/help'],
+        ['Learn', '/learn'],
       ];
       for (const [name, href] of expected) {
         expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
