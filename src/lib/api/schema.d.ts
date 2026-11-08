@@ -276,6 +276,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orders/{id}/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the note / trade thesis on an order
+         * @description Updates the trade note of one of the signed-in user's orders (story NW-17).
+         *     On another user's order it returns 404 ORDER_NOT_FOUND.
+         */
+        patch: operations["updateOrderNote"];
+        trace?: never;
+    };
     "/watchlists": {
         parameters: {
             query?: never;
@@ -465,6 +488,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/insights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Behavioral insights and pattern detection results
+         * @description Evaluates 5 deterministic behavioral bias detectors against the signed-in user's orders and portfolio:
+         *     concentration, revenge trading, overtrading, disposition effect and missing trade theses (story NW-17).
+         */
+        get: operations["getInsights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/insights/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate an AI weekly review of behavioral patterns
+         * @description Generates an educational review of the signed-in user's detected behavioral patterns with
+         *     server-side validated citations to real user orders (story NW-17).
+         */
+        post: operations["generateInsightsReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/insights/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List historical behavioral insight reviews
+         * @description Returns historical reviews for the signed-in user, newest first.
+         */
+        get: operations["listInsightsReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -474,7 +559,7 @@ export interface components {
          *     else (enforced by `internal/handlers/openapi_parity_test.go`).
          * @enum {string}
          */
-        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "AI_BUDGET_EXCEEDED" | "AI_REFUSED" | "AI_UNAVAILABLE";
+        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "ORDER_NOT_FOUND" | "AI_BUDGET_EXCEEDED" | "AI_REFUSED" | "AI_UNAVAILABLE";
         /** @description The body of every error response. */
         Error: {
             /** @description Human-readable message. */
@@ -657,6 +742,8 @@ export interface components {
             quantity: number;
             /** @description Defaults to MARKET. */
             type?: components["schemas"]["OrderType"];
+            /** @description Optional trade thesis / note (≤ 500 characters). */
+            note?: string;
         };
         /**
          * @description An executed order. Pricing (all money in SEK, rounded half-up to 2 decimals):
@@ -684,6 +771,8 @@ export interface components {
             commission: number;
             /** @description Cash debited (BUY) or credited (SELL) in SEK, 2 decimals. */
             total: number;
+            /** @description Trade thesis / note (empty string when none was given). */
+            note?: string;
             /** Format: date-time */
             created_at: string;
             /**
@@ -812,7 +901,7 @@ export interface components {
          * @description An AI feature that calls the LLM gateway. Each one has its own versioned prompt.
          * @enum {string}
          */
-        AIFeature: "instrument_brief";
+        AIFeature: "instrument_brief" | "insights_review";
         /** @description One number of the instrument, in plain language. */
         BriefMetric: {
             /** @example P/E ratio */
@@ -966,6 +1055,54 @@ export interface components {
             /** @description Positions by value desc (then orderbook id asc), then the cash slice, which is always present. */
             allocation: components["schemas"]["AllocationSlice"][];
         };
+        OrderNoteRequest: {
+            /** @description Updated trade thesis / note (≤ 500 characters). */
+            note: string;
+        };
+        /** @enum {string} */
+        DetectorID: "concentration" | "revenge_trading" | "overtrading" | "disposition_effect" | "no_thesis";
+        DetectorEvidence: {
+            /** @description Orders cited as evidence for this detector. */
+            order_ids: number[];
+            /** @description Key metrics computed by the detector. */
+            metrics?: {
+                [key: string]: unknown;
+            };
+        };
+        DetectorResult: {
+            id: components["schemas"]["DetectorID"];
+            title: string;
+            triggered: boolean;
+            /** @enum {string} */
+            severity: "info" | "warning" | "critical";
+            evidence: components["schemas"]["DetectorEvidence"];
+            explanation: string;
+        };
+        Insights: {
+            /** Format: date-time */
+            generated_at: string;
+            detectors: components["schemas"]["DetectorResult"][];
+        };
+        ReviewObservation: {
+            detector_id: string;
+            narrative: string;
+            order_ids: number[];
+        };
+        InsightsReview: {
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            generated_at: string;
+            headline: string;
+            observations: components["schemas"]["ReviewObservation"][];
+            habit_to_try: string;
+            /** @enum {string} */
+            disclaimer: "AI-generated · educational, not financial advice";
+        };
+        InsightsReviewListResponse: {
+            items: components["schemas"]["InsightsReview"][];
+            next_cursor: string | null;
+        };
     };
     responses: {
         /** @description Missing, unknown or expired session. */
@@ -1073,6 +1210,21 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description No order with this id belongs to the signed-in user (another user's order is reported the same way). */
+        OrderNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "order not found",
+                 *       "code": "ORDER_NOT_FOUND"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Malformed JSON, a non-numeric list id, or a name that is blank or longer than 50 characters after trimming. */
         WatchlistValidationError: {
             headers: {
@@ -1137,6 +1289,7 @@ export interface components {
     parameters: {
         OrderbookID: string;
         WatchlistID: number;
+        OrderID: number;
     };
     requestBodies: never;
     headers: never;
@@ -1808,6 +1961,54 @@ export interface operations {
             502: components["responses"]["MarketDataUnavailable"];
         };
     };
+    updateOrderNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "note": "Long-term thesis on green energy"
+                 *     }
+                 */
+                "application/json": components["schemas"]["OrderNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Note updated; the updated order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Note is longer than 500 characters or invalid order id. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "note must be at most 500 characters",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["OrderNotFound"];
+        };
+    };
     listWatchlists: {
         parameters: {
             query?: never;
@@ -2322,6 +2523,177 @@ export interface operations {
                     "application/json": components["schemas"]["PortfolioAnalytics"];
                 };
             };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getInsights: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evaluated detectors for the signed-in user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "generated_at": "2026-11-08T14:30:00Z",
+                     *       "detectors": [
+                     *         {
+                     *           "id": "concentration",
+                     *           "title": "Position concentration",
+                     *           "triggered": true,
+                     *           "severity": "warning",
+                     *           "evidence": {
+                     *             "order_ids": [
+                     *               42
+                     *             ],
+                     *             "metrics": {
+                     *               "weight": 50,
+                     *               "threshold": 40
+                     *             }
+                     *           },
+                     *           "explanation": "One position exceeds 40% of total equity."
+                     *         },
+                     *         {
+                     *           "id": "revenge_trading",
+                     *           "title": "Revenge trading",
+                     *           "triggered": false,
+                     *           "severity": "warning",
+                     *           "evidence": {
+                     *             "order_ids": []
+                     *           },
+                     *           "explanation": "Quick buying following a loss."
+                     *         },
+                     *         {
+                     *           "id": "overtrading",
+                     *           "title": "Overtrading",
+                     *           "triggered": false,
+                     *           "severity": "warning",
+                     *           "evidence": {
+                     *             "order_ids": []
+                     *           },
+                     *           "explanation": "Excessive daily order frequency."
+                     *         },
+                     *         {
+                     *           "id": "disposition_effect",
+                     *           "title": "Disposition effect",
+                     *           "triggered": false,
+                     *           "severity": "warning",
+                     *           "evidence": {
+                     *             "order_ids": []
+                     *           },
+                     *           "explanation": "Selling winners prematurely while riding losing positions."
+                     *         },
+                     *         {
+                     *           "id": "no_thesis",
+                     *           "title": "Missing trade thesis",
+                     *           "triggered": false,
+                     *           "severity": "info",
+                     *           "evidence": {
+                     *             "order_ids": []
+                     *           },
+                     *           "explanation": "Placing trades without documenting rationale."
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Insights"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    generateInsightsReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created review. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": 1,
+                     *       "generated_at": "2026-11-08T14:30:00Z",
+                     *       "headline": "FAKE: weekly review",
+                     *       "observations": [
+                     *         {
+                     *           "detector_id": "concentration",
+                     *           "narrative": "FAKE: Position concentration",
+                     *           "order_ids": [
+                     *             42
+                     *           ]
+                     *         }
+                     *       ],
+                     *       "habit_to_try": "Set a maximum allocation limit per stock before trading.",
+                     *       "disclaimer": "AI-generated · educational, not financial advice"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["InsightsReview"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["AIRefused"];
+            429: components["responses"]["AIBudgetExceeded"];
+            503: components["responses"]["AIUnavailable"];
+        };
+    };
+    listInsightsReviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of reviews. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": 1,
+                     *           "generated_at": "2026-11-08T14:30:00Z",
+                     *           "headline": "FAKE: weekly review",
+                     *           "observations": [
+                     *             {
+                     *               "detector_id": "concentration",
+                     *               "narrative": "FAKE: Position concentration",
+                     *               "order_ids": [
+                     *                 42
+                     *               ]
+                     *             }
+                     *           ],
+                     *           "habit_to_try": "Set a maximum allocation limit per stock before trading.",
+                     *           "disclaimer": "AI-generated · educational, not financial advice"
+                     *         }
+                     *       ],
+                     *       "next_cursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["InsightsReviewListResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
         };
     };
 }
