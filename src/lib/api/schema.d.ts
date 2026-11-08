@@ -297,10 +297,13 @@ export interface paths {
         get: operations["listOrders"];
         put?: never;
         /**
-         * Place a market order and execute it
-         * @description Validates the request, prices it from the live quote (see the Order schema) and, in one DB transaction,
-         *     locks the user row, checks cash or shares, moves the cash, updates the position and stores the order.
-         *     Concurrent orders by the same user are serialized, so cash never goes negative.
+         * Place an order
+         * @description A MARKET order is priced from the live quote (see the Order schema) and, in one DB transaction, the user row
+         *     is locked, buying power or available shares are checked, the cash moves, the position is updated and the
+         *     order is stored FILLED (201). Concurrent orders by the same user are serialized, so cash never goes negative.
+         *
+         *     A LIMIT or STOP order is stored OPEN (201) after its reservation (see OrderRequest) is checked against buying
+         *     power or available shares and booked in the same kind of transaction; the matching engine fills it later.
          *
          *     With an `Idempotency-Key` header, a retry with the same key and the same body returns the original order
          *     (200, identical body) and executes nothing; the same key with a different body is 409 CONFLICT.
@@ -308,6 +311,34 @@ export interface paths {
          */
         post: operations["placeOrder"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * One of the signed-in user's orders
+         * @description Use it to poll an OPEN order until the matching engine fills or rejects it.
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        /**
+         * Cancel an OPEN order
+         * @description In one transaction (user, position and order rows locked, in that order) the order moves from OPEN to
+         *     CANCELLED and its reservation is released. A fill and a cancel racing for the same order serialize on these
+         *     locks: whichever commits first wins, and the other sees the order is no longer OPEN.
+         */
+        delete: operations["cancelOrder"];
         options?: never;
         head?: never;
         patch?: never;
@@ -471,7 +502,7 @@ export interface components {
          *     else (enforced by `internal/handlers/openapi_parity_test.go`).
          * @enum {string}
          */
-        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED";
+        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "ORDER_NOT_FOUND" | "ORDER_NOT_OPEN";
         /** @description The body of every error response. */
         Error: {
             /** @description Human-readable message. */
@@ -628,15 +659,36 @@ export interface components {
          */
         OrderSide: "BUY" | "SELL";
         /**
-         * @description Only market orders until NW-08.
+         * @description MARKET executes immediately. LIMIT and STOP are good-till-cancelled pending orders (story NW-08): they start
+         *     OPEN and the matching engine fills them once the quote reaches their price (see OrderRequest).
          * @enum {string}
          */
-        OrderType: "MARKET";
+        OrderType: "MARKET" | "LIMIT" | "STOP";
         /**
-         * @description Market orders are always FILLED; the other states are reserved for pending orders (NW-08).
+         * @description Market orders are always FILLED. A LIMIT or STOP order starts OPEN and moves exactly once, to FILLED (the
+         *     matching engine), CANCELLED (DELETE /orders/{id}) or REJECTED (not enough buying power at fill time).
          * @enum {string}
          */
         OrderStatus: "OPEN" | "FILLED" | "CANCELLED" | "REJECTED";
+        /**
+         * @description A market order executes at once. LIMIT and STOP orders are good-till-cancelled and start OPEN.
+         *
+         *     Reservations at placement (money rounded half-up to 2 decimals; commission = max(1.00, 0.25% × gross)):
+         *     - BUY LIMIT reserves quantity × limit_price + commission(quantity × limit_price);
+         *     - BUY STOP reserves the same with round2(stop_price × 1.05) in place of limit_price;
+         *     - SELL orders reserve the shares.
+         *     buying_power = cash − reserved_cash and available shares = quantity − reserved_quantity; every order,
+         *     market orders included, must fit them (422 INSUFFICIENT_FUNDS / INSUFFICIENT_SHARES otherwise).
+         *
+         *     The matching engine checks open orders about once a second and fills them with the market pricing rules
+         *     (see Order) when:
+         *     - BUY LIMIT: ask ≤ limit_price (fills at the ask);
+         *     - SELL LIMIT: bid ≥ limit_price (fills at the bid);
+         *     - SELL STOP: bid ≤ stop_price (fills at the bid);
+         *     - BUY STOP: ask ≥ stop_price (fills at the ask).
+         *     When the cash outside other reservations no longer covers the total at fill time, the order is REJECTED
+         *     with a reject_reason and its reservation is released.
+         */
         OrderRequest: {
             /** @example SIM-FJRD */
             orderbook_id: string;
@@ -648,15 +700,26 @@ export interface components {
             quantity: number;
             /** @description Defaults to MARKET. */
             type?: components["schemas"]["OrderType"];
+            /**
+             * @description Required for (and only allowed on) LIMIT orders. SEK, at most 2 decimals.
+             * @example 95
+             */
+            limit_price?: number;
+            /**
+             * @description Required for (and only allowed on) STOP orders. SEK, at most 2 decimals.
+             * @example 90
+             */
+            stop_price?: number;
         };
         /**
-         * @description An executed order. Pricing (all money in SEK, rounded half-up to 2 decimals):
+         * @description An order and, once FILLED, its fill. Pricing (all money in SEK, rounded half-up to 2 decimals):
          *     - base price = ask for BUY, bid for SELL;
          *     - quantity > 100 applies 0.5% slippage against the trader (BUY × 1.005, SELL × 0.995);
          *     - fill_price = base price (after slippage) rounded to 2 decimals, before anything else;
          *     - gross = fill_price × quantity; commission = max(1.00, 0.25% × gross);
          *     - total = gross + commission (BUY, debited) or gross − commission (SELL, credited).
-         *     Execution waits a simulated 50–500 ms before the price is read.
+         *     A market order waits a simulated 50–500 ms before the price is read. fill_price, commission and total are
+         *     null unless status is FILLED.
          */
         Order: {
             /** Format: int64 */
@@ -669,12 +732,18 @@ export interface components {
             status: components["schemas"]["OrderStatus"];
             /** @description Up to 4 decimals. */
             quantity: number;
-            /** @description Price per share in SEK, 2 decimals. */
-            fill_price: number;
-            /** @description SEK, 2 decimals. */
-            commission: number;
-            /** @description Cash debited (BUY) or credited (SELL) in SEK, 2 decimals. */
-            total: number;
+            /** @description The LIMIT order's price in SEK (2 decimals); null for other types. */
+            limit_price: number | null;
+            /** @description The STOP order's trigger price in SEK (2 decimals); null for other types. */
+            stop_price: number | null;
+            /** @description Price per share in SEK, 2 decimals. null unless FILLED. */
+            fill_price: number | null;
+            /** @description SEK, 2 decimals. null unless FILLED. */
+            commission: number | null;
+            /** @description Cash debited (BUY) or credited (SELL) in SEK, 2 decimals. null unless FILLED. */
+            total: number | null;
+            /** @description Why the matching engine rejected the order; null unless REJECTED. */
+            reject_reason: string | null;
             /** Format: date-time */
             created_at: string;
             /**
@@ -780,18 +849,23 @@ export interface components {
             day_change_percent: number;
             /** @description Percent of holdings_value, 2 decimals. */
             weight: number;
+            /** @description Shares held back by OPEN SELL orders (up to 4 decimals); quantity − reserved_quantity can be sold. */
+            reserved_quantity: number;
         };
         /**
          * @description The signed-in user's portfolio. Money in SEK, 2 decimals.
          *     - holdings_value = Σ positions.market_value; total_equity = cash + holdings_value;
          *     - unrealized_pnl = Σ positions.unrealized_pnl;
-         *     - realized_pnl accumulates over every SELL: sell total (net proceeds) − avg_cost × quantity sold.
+         *     - realized_pnl accumulates over every SELL: sell total (net proceeds) − avg_cost × quantity sold;
+         *     - reserved_cash = Σ reservations of OPEN BUY orders (still part of cash); buying_power = cash − reserved_cash.
          *     positions are sorted by market_value desc (largest holding first), then orderbook_id asc.
          *     top_movers is at most 5 positions sorted by day_change_percent desc, then orderbook_id asc.
          *     Both arrays are empty (never null) without positions.
          */
         Portfolio: {
             cash: number;
+            reserved_cash: number;
+            buying_power: number;
             holdings_value: number;
             total_equity: number;
             unrealized_pnl: number;
@@ -989,8 +1063,39 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description No order with this id belongs to the signed-in user (another user's order is reported the same way). */
+        OrderNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "order not found",
+                 *       "code": "ORDER_NOT_FOUND"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The order id is not a positive integer. */
+        OrderIDValidationError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "order id must be a positive integer",
+                 *       "code": "VALIDATION_ERROR"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
+        OrderID: number;
         OrderbookID: string;
         WatchlistID: number;
     };
@@ -1567,8 +1672,10 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description next_cursor of the previous page. */
+                /** @description next_cursor of the previous page. Send the same status filter on every page. */
                 cursor?: string;
+                /** @description Only orders in one of these statuses, comma-separated (e.g. `OPEN`, or `FILLED,CANCELLED,REJECTED`). */
+                status?: components["schemas"]["OrderStatus"][];
             };
             header?: never;
             path?: never;
@@ -1594,9 +1701,12 @@ export interface operations {
                      *           "type": "MARKET",
                      *           "status": "FILLED",
                      *           "quantity": 5,
+                     *           "limit_price": null,
+                     *           "stop_price": null,
                      *           "fill_price": 109.89,
                      *           "commission": 1.37,
                      *           "total": 548.08,
+                     *           "reject_reason": null,
                      *           "created_at": "2026-10-26T09:42:00Z",
                      *           "filled_at": "2026-10-26T09:42:00Z"
                      *         }
@@ -1607,7 +1717,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrderPage"];
                 };
             };
-            /** @description limit is not an integer from 1 to 100, or cursor is malformed. */
+            /** @description limit is not an integer from 1 to 100, cursor is malformed, or status is not a list of OrderStatus values. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1637,13 +1747,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "orderbook_id": "SIM-FJRD",
-                 *       "side": "BUY",
-                 *       "quantity": 10
-                 *     }
-                 */
                 "application/json": components["schemas"]["OrderRequest"];
             };
         };
@@ -1657,7 +1760,7 @@ export interface operations {
                     "application/json": components["schemas"]["Order"];
                 };
             };
-            /** @description Executed. */
+            /** @description Executed (MARKET, status FILLED) or accepted (LIMIT/STOP, status OPEN). */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1673,9 +1776,12 @@ export interface operations {
                      *       "type": "MARKET",
                      *       "status": "FILLED",
                      *       "quantity": 10,
+                     *       "limit_price": null,
+                     *       "stop_price": null,
                      *       "fill_price": 100.1,
                      *       "commission": 2.5,
                      *       "total": 1003.5,
+                     *       "reject_reason": null,
                      *       "created_at": "2026-10-25T09:41:00Z",
                      *       "filled_at": "2026-10-25T09:41:00Z"
                      *     }
@@ -1684,8 +1790,9 @@ export interface operations {
                 };
             };
             /**
-             * @description Malformed JSON, blank orderbook_id, side not BUY/SELL, quantity <= 0 or with more than 4 decimals,
-             *     type other than MARKET, or an invalid Idempotency-Key.
+             * @description Malformed JSON, blank orderbook_id, side not BUY/SELL, quantity <= 0 or with more than 4 decimals, an
+             *     unknown type, a missing, non-positive or over-precise (more than 2 decimals) limit_price on LIMIT or
+             *     stop_price on STOP, a price on a type that takes none, or an invalid Idempotency-Key.
              */
             400: {
                 headers: {
@@ -1718,7 +1825,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Business rule; nothing was executed. */
+            /** @description Business rule (buying power or available shares); nothing was executed or reserved. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1728,6 +1835,91 @@ export interface operations {
                 };
             };
             502: components["responses"]["MarketDataUnavailable"];
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": 51,
+                     *       "orderbook_id": "SIM-KALL",
+                     *       "symbol": "KALL",
+                     *       "name": "Kallsten Bank",
+                     *       "side": "BUY",
+                     *       "type": "LIMIT",
+                     *       "status": "FILLED",
+                     *       "quantity": 10,
+                     *       "limit_price": 95,
+                     *       "stop_price": null,
+                     *       "fill_price": 94.89,
+                     *       "commission": 2.37,
+                     *       "total": 951.27,
+                     *       "reject_reason": null,
+                     *       "created_at": "2026-11-08T09:41:00Z",
+                     *       "filled_at": "2026-11-08T09:41:03Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["OrderIDValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["OrderNotFound"];
+        };
+    };
+    cancelOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled; the order with status CANCELLED. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["OrderIDValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["OrderNotFound"];
+            /** @description The order is not OPEN any more (already filled, cancelled or rejected). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "order is not open",
+                     *       "code": "ORDER_NOT_OPEN"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listWatchlists: {
@@ -2041,6 +2233,8 @@ export interface operations {
                     /**
                      * @example {
                      *       "cash": 98996.5,
+                     *       "reserved_cash": 0,
+                     *       "buying_power": 98996.5,
                      *       "holdings_value": 1100,
                      *       "total_equity": 100096.5,
                      *       "unrealized_pnl": 96.5,
@@ -2057,7 +2251,8 @@ export interface operations {
                      *           "unrealized_pnl": 96.5,
                      *           "unrealized_pnl_percent": 9.62,
                      *           "day_change_percent": 1.25,
-                     *           "weight": 100
+                     *           "weight": 100,
+                     *           "reserved_quantity": 0
                      *         }
                      *       ],
                      *       "top_movers": [
@@ -2072,7 +2267,8 @@ export interface operations {
                      *           "unrealized_pnl": 96.5,
                      *           "unrealized_pnl_percent": 9.62,
                      *           "day_change_percent": 1.25,
-                     *           "weight": 100
+                     *           "weight": 100,
+                     *           "reserved_quantity": 0
                      *         }
                      *       ]
                      *     }

@@ -4,7 +4,9 @@ import {
   MIN_COMMISSION,
   SLIPPAGE_QUANTITY_THRESHOLD,
   SLIPPAGE_RATE,
+  STOP_RESERVATION_BUFFER,
   previewOrder,
+  previewReservation,
 } from '../preview';
 import type { OrderPreview, OrderPreviewInput } from '../types';
 
@@ -100,5 +102,50 @@ describe('previewOrder', () => {
     expect(SLIPPAGE_RATE).toBe(0.005);
     expect(COMMISSION_RATE).toBe(0.0025);
     expect(MIN_COMMISSION).toBe(1);
+    expect(STOP_RESERVATION_BUFFER).toBe(1.05);
+  });
+});
+
+describe('previewReservation', () => {
+  it('AC1: BUY LIMIT 10 @ 95 reserves 952.38 SEK cash', () => {
+    expect(previewReservation({ side: 'BUY', type: 'LIMIT', quantity: 10, limitPrice: 95 })).toEqual({
+      cash: 952.38,
+      shares: 0,
+    });
+  });
+
+  it('BUY STOP 10 @ 90 reserves at 94.50 (90 x 1.05) = 947.36 SEK cash', () => {
+    expect(previewReservation({ side: 'BUY', type: 'STOP', quantity: 10, stopPrice: 90 })).toEqual({
+      cash: 947.36,
+      shares: 0,
+    });
+  });
+
+  it('SELL LIMIT 10 reserves 10 shares and 0 cash', () => {
+    expect(previewReservation({ side: 'SELL', type: 'LIMIT', quantity: 10, limitPrice: 95 })).toEqual({
+      cash: 0,
+      shares: 10,
+    });
+  });
+
+  it('SELL STOP 10 reserves 10 shares and 0 cash', () => {
+    expect(previewReservation({ side: 'SELL', type: 'STOP', quantity: 10, stopPrice: 90 })).toEqual({
+      cash: 0,
+      shares: 10,
+    });
+  });
+
+  it('returns null for missing or invalid prices on BUY', () => {
+    expect(previewReservation({ side: 'BUY', type: 'LIMIT', quantity: 10, limitPrice: 0 })).toBeNull();
+    expect(previewReservation({ side: 'BUY', type: 'LIMIT', quantity: 10, limitPrice: -10 })).toBeNull();
+    expect(previewReservation({ side: 'BUY', type: 'LIMIT', quantity: 10, limitPrice: null })).toBeNull();
+    expect(previewReservation({ side: 'BUY', type: 'STOP', quantity: 10, stopPrice: 0 })).toBeNull();
+    expect(previewReservation({ side: 'BUY', type: 'MARKET', quantity: 10 })).toBeNull();
+  });
+
+  it('returns null for invalid quantities', () => {
+    expect(previewReservation({ side: 'BUY', type: 'LIMIT', quantity: 0, limitPrice: 95 })).toBeNull();
+    expect(previewReservation({ side: 'BUY', type: 'LIMIT', quantity: -5, limitPrice: 95 })).toBeNull();
+    expect(previewReservation({ side: 'SELL', type: 'LIMIT', quantity: 1.00001, limitPrice: 95 })).toBeNull();
   });
 });
