@@ -1,6 +1,6 @@
 // Pure helpers over the GET /portfolio body (story NW-05). Money is SEK with 2 decimals.
 import { formatMoney } from '@/lib/format';
-import type { Portfolio } from './types';
+import type { Portfolio, PortfolioPosition } from './types';
 
 export type PnlTone = 'positive' | 'negative' | 'neutral';
 
