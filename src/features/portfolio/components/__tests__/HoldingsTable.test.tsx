@@ -9,6 +9,7 @@ const initialPortfolio = usePortfolioStore.getState();
 const fresh: Portfolio = {
   cash: 100000,
   holdings_value: 0,
+  vault_value: 0,
   total_equity: 100000,
   unrealized_pnl: 0,
   realized_pnl: 0,
@@ -33,6 +34,7 @@ const nve: PortfolioPosition = {
 const withPosition: Portfolio = {
   cash: 98996.5,
   holdings_value: 1100,
+  vault_value: 0,
   total_equity: 100096.5,
   unrealized_pnl: 96.5,
   realized_pnl: 0,

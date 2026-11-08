@@ -8,6 +8,7 @@ type FetchMock = Mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<
 const portfolio: Portfolio = {
   cash: 98996.5,
   holdings_value: 1100,
+  vault_value: 0,
   total_equity: 100096.5,
   unrealized_pnl: 96.5,
   realized_pnl: 0,
@@ -118,6 +119,7 @@ describe('usePortfolioStore', () => {
     const fresh: Portfolio = {
       cash: 100000,
       holdings_value: 0,
+      vault_value: 0,
       total_equity: 100000,
       unrealized_pnl: 0,
       realized_pnl: 0,
