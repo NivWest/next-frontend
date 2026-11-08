@@ -52,6 +52,7 @@ describe('Vault Component', () => {
         role: 'member',
         balance: 80000,
         is_guest: false,
+        leaderboard_opt_in: false,
       },
     });
     useVaultStore.setState({
@@ -90,6 +91,7 @@ describe('Vault Component', () => {
         role: 'member',
         balance: 80000,
         is_guest: false,
+        leaderboard_opt_in: false,
       },
     });
     useVaultStore.setState({

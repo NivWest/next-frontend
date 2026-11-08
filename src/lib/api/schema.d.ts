@@ -137,6 +137,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the signed-in user's profile
+         * @description Updates the user's pseudonymous display name and/or leaderboard opt-in status (story NW-13).
+         *     Display name must be 3–20 characters [A-Za-z0-9_-] and unique (case-insensitive).
+         */
+        patch: operations["updateProfile"];
+        trace?: never;
+    };
     "/admin/users/{id}": {
         parameters: {
             query?: never;
@@ -574,6 +595,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public leaderboard ranked by return or Sharpe ratio
+         * @description Materialized rankings refreshed every LEADERBOARD_REFRESH (story NW-13).
+         *     metric=return ranks all opted-in users by total_return_pct.
+         *     metric=sharpe ranks only users with sufficient data by sharpe_ratio.
+         *     Ties are broken by earlier opted_in_at.
+         */
+        get: operations["getLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -607,6 +651,13 @@ export interface components {
             balance: number;
             /** @description True when role is guest. */
             is_guest: boolean;
+            /**
+             * @description Pseudonymous handle for the leaderboard.
+             * @example bull_42
+             */
+            display_name?: string | null;
+            /** @description True when opted in to the public leaderboard. */
+            leaderboard_opt_in: boolean;
         };
         /** @description Optional switches that are enabled on this deployment. */
         Features: {
@@ -1058,6 +1109,41 @@ export interface components {
             /** @description Kept for list pagination convention; always null for now. */
             next_cursor: string | null;
         };
+        /** @description Fields to update on the user profile (story NW-13). */
+        UpdateProfileRequest: {
+            /**
+             * @description Unique pseudonymous handle, 3–20 characters [A-Za-z0-9_-].
+             * @example bull_42
+             */
+            display_name?: string;
+            /** @description Whether to appear on public leaderboards. */
+            leaderboard_opt_in?: boolean;
+        };
+        /**
+         * @description Ranking metric for the leaderboard.
+         * @enum {string}
+         */
+        LeaderboardMetric: "return" | "sharpe";
+        /** @description One ranked leaderboard entry (story NW-13). Exposes no internal ID, email or balance. */
+        LeaderboardEntry: {
+            /** @description Rank (1-based). Ties broken by earlier opted_in_at. */
+            rank: number;
+            /** @description Unique pseudonymous handle. */
+            display_name: string;
+            /** @description Total return in percent, 2 decimals. */
+            total_return_pct: number;
+            /** @description Annualized Sharpe ratio, 2 decimals (null if insufficient data). */
+            sharpe_ratio: number | null;
+            /** @description Maximum drawdown in percent, 2 decimals (null if insufficient data). */
+            max_drawdown_pct: number | null;
+            /** @description True when this entry belongs to the caller. */
+            is_me: boolean;
+        };
+        /** @description A page of ranked leaderboard entries. */
+        LeaderboardPage: {
+            /** @description Leaderboard entries ordered by rank. The caller's own entry is appended if outside the page. */
+            items: components["schemas"]["LeaderboardEntry"][];
+        };
     };
     responses: {
         /** @description Missing, unknown or expired session. */
@@ -1463,6 +1549,47 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            /** @description Display name already taken (case-insensitive). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "display name already taken",
+                     *       "code": "CONFLICT"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     deleteUser: {
@@ -2675,6 +2802,35 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getLeaderboard: {
+        parameters: {
+            query: {
+                /**
+                 * @description Ranking metric.
+                 * @example return
+                 */
+                metric: components["schemas"]["LeaderboardMetric"];
+                /** @description Maximum entries to return (1–100, default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ranked leaderboard entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaderboardPage"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
         };
     };
 }
