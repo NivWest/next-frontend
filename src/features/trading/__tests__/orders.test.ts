@@ -14,9 +14,12 @@ const order: Order = {
   type: 'MARKET',
   status: 'FILLED',
   quantity: 10,
+  limit_price: null,
+  stop_price: null,
   fill_price: 100.1,
   commission: 2.5,
   total: 1003.5,
+  reject_reason: null,
   created_at: '2026-10-25T12:00:00Z',
   filled_at: '2026-10-25T12:00:00Z',
 };

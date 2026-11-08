@@ -20,6 +20,7 @@ function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
     unrealized_pnl_percent: 9.62,
     day_change_percent: 1.25,
     weight: 100,
+    reserved_quantity: 0,
     ...overrides,
   };
 }
@@ -27,6 +28,8 @@ function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
 function portfolio(overrides: Partial<Portfolio> = {}): Portfolio {
   return {
     cash: 98996.5,
+    reserved_cash: 0,
+    buying_power: 98996.5,
     holdings_value: 1100,
     total_equity: 100096.5,
     unrealized_pnl: 96.5,
@@ -39,6 +42,8 @@ function portfolio(overrides: Partial<Portfolio> = {}): Portfolio {
 
 const fresh = portfolio({
   cash: 100000,
+  reserved_cash: 0,
+  buying_power: 100000,
   holdings_value: 0,
   total_equity: 100000,
   unrealized_pnl: 0,

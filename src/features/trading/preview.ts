@@ -1,4 +1,4 @@
-import type { OrderPreview, OrderPreviewInput } from './types';
+import type { OrderPreview, OrderPreviewInput, ReservationInput, ReservationPreview } from './types';
 
 // Client-side order preview (story NW-04). Mirrors the backend pricing in internal/services (api/openapi.yaml#/components/schemas/Order):
 // price = ask (BUY) / bid (SELL), ×(1 + SLIPPAGE_RATE) / ×(1 − SLIPPAGE_RATE) when quantity > SLIPPAGE_QUANTITY_THRESHOLD,
@@ -77,5 +77,54 @@ export function previewOrder(input: OrderPreviewInput): OrderPreview | null {
     gross: fromCents(grossCents),
     commission: fromCents(commissionCents),
     total: fromCents(totalCents),
+  };
+}
+
+/** 5% buffer for BUY STOP reservations, mirroring backend StopReservationBuffer. */
+export const STOP_RESERVATION_BUFFER = 1.05;
+
+/**
+ * Calculates the cash or share reservation for pending LIMIT and STOP orders (story NW-08).
+ * BUY LIMIT: reserves quantity × limit_price + commission(quantity × limit_price).
+ * BUY STOP: reserves quantity × (stop_price × 1.05) + commission(quantity × (stop_price × 1.05)).
+ * SELL LIMIT & SELL STOP: reserves quantity shares (cash: 0).
+ */
+export function previewReservation(input: ReservationInput): ReservationPreview | null {
+  const { side, type, quantity, limitPrice, stopPrice } = input;
+  const units = toQuantityUnits(quantity);
+  if (units === null) return null;
+
+  if (side === 'SELL') {
+    return { cash: 0, shares: quantity };
+  }
+
+  let priceNumber: number | null = null;
+  if (type === 'LIMIT') {
+    if (limitPrice === undefined || limitPrice === null || limitPrice <= 0 || !Number.isFinite(limitPrice)) {
+      return null;
+    }
+    priceNumber = limitPrice;
+  } else if (type === 'STOP') {
+    if (stopPrice === undefined || stopPrice === null || stopPrice <= 0 || !Number.isFinite(stopPrice)) {
+      return null;
+    }
+    const rawCents = Math.round(stopPrice * STOP_RESERVATION_BUFFER * CENTS);
+    priceNumber = rawCents / CENTS;
+  } else {
+    return null;
+  }
+
+  const priceCents = toCents(priceNumber);
+  if (priceCents <= 0) return null;
+
+  const grossCents = divRoundHalfUp(BigInt(priceCents) * BigInt(units), BigInt(QUANTITY_SCALE));
+  const percentCommission = divRoundHalfUp(grossCents * BigInt(COMMISSION_BPS), BigInt(BASIS_POINTS));
+  const minCommission = BigInt(MIN_COMMISSION_CENTS);
+  const commissionCents = percentCommission > minCommission ? percentCommission : minCommission;
+  const totalCents = grossCents + commissionCents;
+
+  return {
+    cash: fromCents(totalCents),
+    shares: 0,
   };
 }
