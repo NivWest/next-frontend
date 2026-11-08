@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney, formatPercent } from "../format";
+import { formatMoney, formatPercent, formatQuantity } from "../format";
 
 describe("formatMoney", () => {
   it("defaults to SEK with thousands separators and two decimals", () => {
@@ -48,5 +48,17 @@ describe("formatPercent", () => {
 
   it("adds thousands separators to large values", () => {
     expect(formatPercent(1234.5)).toBe("+1,234.50%");
+  });
+});
+
+describe("formatQuantity", () => {
+  it("drops trailing zeros and keeps up to 4 decimals", () => {
+    expect(formatQuantity(10)).toBe("10");
+    expect(formatQuantity(0.5)).toBe("0.5");
+    expect(formatQuantity(0.1234)).toBe("0.1234");
+  });
+
+  it("rounds beyond 4 decimals and adds thousands separators", () => {
+    expect(formatQuantity(1234.12345)).toBe("1,234.1235");
   });
 });

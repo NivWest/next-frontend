@@ -1,119 +1,108 @@
 import { render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TopMovers } from '../TopMovers';
-import { searchInstruments } from '@/features/markets/api/market';
-import type { InstrumentSearchResponse, InstrumentSummary } from '@/features/markets/types';
+import type { Portfolio, PortfolioPosition } from '@/features/portfolio/types';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
-import { useUIStore } from '@/store/useUIStore';
-
-vi.mock('@/features/markets/api/market', () => ({
-  searchInstruments: vi.fn<(query: string) => Promise<InstrumentSearchResponse>>(),
-}));
-
-const search = vi.mocked(searchInstruments);
 
 const initialPortfolio = usePortfolioStore.getState();
-const initialUI = useUIStore.getState();
 
-function instrument(overrides: Partial<InstrumentSummary>): InstrumentSummary {
+function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
   return {
     orderbook_id: 'SIM-XXXX',
     symbol: 'XXXX',
     name: 'Example AB',
-    currency: 'SEK',
-    market: 'XSTO',
+    quantity: 10,
+    avg_cost: 100,
     last_price: 100,
-    change_percent: 0,
+    market_value: 1000,
+    unrealized_pnl: 0,
+    unrealized_pnl_percent: 0,
+    day_change_percent: 0,
+    weight: 100,
     ...overrides,
   };
 }
 
-function page(...items: InstrumentSummary[]): InstrumentSearchResponse {
-  return { items, next_cursor: null };
+function portfolio(topMovers: PortfolioPosition[]): Portfolio {
+  return {
+    cash: 100000,
+    holdings_value: 0,
+    total_equity: 100000,
+    unrealized_pnl: 0,
+    realized_pnl: 0,
+    positions: topMovers,
+    top_movers: topMovers,
+  };
 }
 
 describe('TopMovers', () => {
-  beforeEach(() => {
-    search.mockReset();
-  });
-
   afterEach(() => {
     usePortfolioStore.setState(initialPortfolio, true);
-    useUIStore.setState(initialUI, true);
   });
 
-  it('asks signed-out visitors to sign in and fetches nothing', () => {
-    useUIStore.setState({ isAuthenticated: false });
-    usePortfolioStore.setState({ watchlist: ['FJRD'] });
+  it('shows a loading status before the portfolio arrives', () => {
+    usePortfolioStore.setState({ portfolio: null, portfolioStatus: 'loading' });
 
     render(<TopMovers />);
 
-    expect(screen.getByText('Sign in to see watchlist movers.')).toBeInTheDocument();
-    expect(search).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Top movers' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByRole('list')).toBeNull();
   });
 
-  it('shows the empty-watchlist state and fetches nothing', () => {
-    useUIStore.setState({ isAuthenticated: true });
-    usePortfolioStore.setState({ watchlist: [] });
+  it('shows an alert when the first load fails', () => {
+    usePortfolioStore.setState({ portfolio: null, portfolioStatus: 'error' });
 
     render(<TopMovers />);
 
-    expect(screen.getByText('Your watchlist is empty.')).toBeInTheDocument();
-    expect(search).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('lists movers sorted by change with formatted price and percent', async () => {
-    useUIStore.setState({ isAuthenticated: true });
-    usePortfolioStore.setState({ watchlist: ['fjrd', 'NORD', 'AAPL'] });
-    search.mockImplementation(async (query) => {
-      switch (query) {
-        case 'fjrd':
-          // The exact symbol match wins over the first hit, ignoring case.
-          return page(
-            instrument({ symbol: 'FJRD-B', last_price: 1, change_percent: 9 }),
-            instrument({ symbol: 'FJRD', last_price: 100000, change_percent: 1.25 }),
-          );
-        case 'NORD':
-          return page(instrument({ symbol: 'NORD', last_price: 42.5, change_percent: -0.5 }));
-        case 'AAPL':
-          // No exact match: falls back to the first hit.
-          return page(instrument({ symbol: 'AAPL.US', currency: 'USD', last_price: 189.9, change_percent: 3 }));
-        default:
-          return page();
-      }
-    });
+  it('shows its own empty text, never the holdings table one, without positions', () => {
+    usePortfolioStore.setState({ portfolio: portfolio([]), portfolioStatus: 'ready' });
 
     render(<TopMovers />);
 
-    await screen.findByText('NORD');
-    const list = screen.getByRole('list', { name: 'Watchlist movers' });
+    expect(screen.getByText('Movers appear once you hold positions.')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('No positions yet');
+    expect(screen.queryByRole('list')).toBeNull();
+  });
+
+  it('lists top_movers in order with instrument links, price and coloured day change', () => {
+    const movers = [
+      position({ orderbook_id: 'SIM-NVE', symbol: 'NVE', name: 'Nordvik Energy', last_price: 110, day_change_percent: 3 }),
+      position({ orderbook_id: 'SIM-FJRD', symbol: 'FJRD', name: 'Fjord AB', last_price: 1234.5, day_change_percent: 0 }),
+      position({ orderbook_id: 'SIM-MALM', symbol: 'MALM', name: 'Malm Mining', last_price: 42.5, day_change_percent: -1.25 }),
+    ];
+    usePortfolioStore.setState({ portfolio: portfolio(movers), portfolioStatus: 'ready' });
+
+    render(<TopMovers />);
+
+    const list = screen.getByRole('list', { name: 'Top movers' });
     const rows = within(list).getAllByRole('listitem');
     expect(rows.map((row) => row.textContent)).toEqual([
-      'AAPL189.90 USD+3.00%',
-      'fjrd100,000.00 SEK+1.25%',
-      'NORD42.50 SEK-0.50%',
+      'Nordvik EnergyNVE110.00 SEK+3.00%',
+      'Fjord ABFJRD1,234.50 SEK0.00%',
+      'Malm MiningMALM42.50 SEK-1.25%',
     ]);
-    expect(search).toHaveBeenCalledTimes(3);
-    expect(screen.queryByText(/\$/)).toBeNull();
+    expect(within(list).getByRole('link', { name: 'Nordvik Energy' })).toHaveAttribute('href', '/markets/SIM-NVE');
+    expect(within(list).getByRole('link', { name: 'Malm Mining' })).toHaveAttribute('href', '/markets/SIM-MALM');
+    expect(within(rows[0]).getByText('+3.00%')).toHaveClass('text-green-500');
+    expect(within(rows[1]).getByText('0.00%')).toHaveClass('text-[#a1a1aa]');
+    expect(within(rows[2]).getByText('-1.25%')).toHaveClass('text-red-500');
+    expect(document.body.textContent).not.toContain('$');
   });
 
-  it('skips a ticker whose lookup fails or finds nothing', async () => {
-    useUIStore.setState({ isAuthenticated: true });
-    usePortfolioStore.setState({ watchlist: ['BAD', 'NONE', 'NORD'] });
-    search.mockImplementation(async (query) => {
-      if (query === 'BAD') throw new Error('upstream unavailable');
-      if (query === 'NONE') return page();
-      return page(instrument({ symbol: 'NORD', last_price: 42.5, change_percent: -0.5 }));
+  it('keeps showing the last movers while a refresh is loading', () => {
+    usePortfolioStore.setState({
+      portfolio: portfolio([position({ name: 'Nordvik Energy' })]),
+      portfolioStatus: 'loading',
     });
 
     render(<TopMovers />);
 
-    await screen.findByText('NORD');
-    const list = screen.getByRole('list', { name: 'Watchlist movers' });
-    const rows = within(list).getAllByRole('listitem');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toHaveTextContent('NORD');
-    expect(screen.queryByText('BAD')).toBeNull();
-    expect(screen.queryByText('NONE')).toBeNull();
+    expect(screen.getByRole('list', { name: 'Top movers' })).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

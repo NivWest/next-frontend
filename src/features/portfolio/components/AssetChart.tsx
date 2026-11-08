@@ -9,7 +9,6 @@ import { SimulatedBadge } from '@/features/markets/components/SimulatedBadge';
 import {
   CANDLE_PERIODS,
   DEFAULT_CANDLE_PERIOD,
-  DEFAULT_CHART_INSTRUMENT,
   isSimulatedInstrument,
   type Candle,
   type CandlePeriod,
@@ -19,9 +18,15 @@ import { formatMoney, formatPercent } from '@/lib/format';
 import { instrumentHref } from '@/lib/routes';
 
 interface AssetChartProps {
-  /** Instrument to chart; the dashboard uses the default until portfolios pick their own (NW-05). */
-  orderbookId?: string;
+  /** Instrument to chart (the dashboard passes the largest holding); null shows the empty state. */
+  orderbookId: string | null;
 }
+
+interface InstrumentChartProps {
+  orderbookId: string;
+}
+
+const PANEL_CLASS = 'bg-[#0a0a0a] border border-[#27272a] rounded-xl p-5 flex flex-col h-full shadow-sm';
 
 /** Details fetch result, tagged with its id so a new id reads as "loading" during render. */
 type DetailsResult = { id: string; ok: true; details: InstrumentDetails } | { id: string; ok: false };
@@ -44,7 +49,22 @@ function formatChange(change: PeriodChange, currency: string): string {
   return `${signedMoney} (${formatPercent(change.percent)})`;
 }
 
-export function AssetChart({ orderbookId = DEFAULT_CHART_INSTRUMENT }: AssetChartProps) {
+/** Charts the given instrument, or shows an empty state (and fetches nothing) without one. */
+export function AssetChart({ orderbookId }: AssetChartProps) {
+  if (orderbookId === null) {
+    return (
+      <section aria-label="Asset chart" className={PANEL_CLASS}>
+        <h2 className="text-white font-semibold mb-4">Largest holding</h2>
+        <div className="flex-1 flex items-center justify-center text-center text-sm text-[#a1a1aa]">
+          <p>Buy an instrument to chart your largest holding.</p>
+        </div>
+      </section>
+    );
+  }
+  return <InstrumentChart orderbookId={orderbookId} />;
+}
+
+function InstrumentChart({ orderbookId }: InstrumentChartProps) {
   const [detailsResult, setDetailsResult] = useState<DetailsResult | null>(null);
   const [changeResult, setChangeResult] = useState<ChangeResult | null>(null);
 
@@ -74,10 +94,7 @@ export function AssetChart({ orderbookId = DEFAULT_CHART_INSTRUMENT }: AssetChar
   }
 
   return (
-    <section
-      aria-label="Asset chart"
-      className="bg-[#0a0a0a] border border-[#27272a] rounded-xl p-5 flex flex-col h-full shadow-sm"
-    >
+    <section aria-label="Asset chart" className={PANEL_CLASS}>
       <div className="flex items-start gap-3 mb-4">
         <div className="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center shrink-0" aria-hidden="true">
           <div className="w-4 h-4 bg-green-500 rounded-sm" />

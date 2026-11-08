@@ -60,10 +60,22 @@ describe('AssetChart', () => {
     vi.restoreAllMocks();
   });
 
-  it('charts SIM-FJRD by default and never mentions Apple', async () => {
+  it('shows an empty state and fetches nothing without an instrument', () => {
+    render(<AssetChart orderbookId={null} />);
+
+    expect(screen.getByRole('region', { name: 'Asset chart' })).toHaveTextContent(
+      'Buy an instrument to chart your largest holding.',
+    );
+    expect(document.body.textContent).not.toContain('No positions yet');
+    expect(getDetails).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('price-chart')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('charts the given instrument and never mentions Apple', async () => {
     getDetails.mockResolvedValue(fjord);
 
-    render(<AssetChart />);
+    render(<AssetChart orderbookId="SIM-FJRD" />);
 
     expect(getDetails).toHaveBeenCalledWith('SIM-FJRD');
     expect(await screen.findByRole('heading', { name: 'FJRD' })).toBeInTheDocument();
@@ -75,7 +87,7 @@ describe('AssetChart', () => {
   it('renders the name link, market, badge and last price without a dollar sign', async () => {
     getDetails.mockResolvedValue(fjord);
 
-    render(<AssetChart />);
+    render(<AssetChart orderbookId="SIM-FJRD" />);
 
     const link = await screen.findByRole('link', { name: 'Fjord Energy AB' });
     expect(link).toHaveAttribute('href', '/markets/SIM-FJRD');
@@ -91,7 +103,7 @@ describe('AssetChart', () => {
 
   it('shows the selected period change reported by PriceChart', async () => {
     getDetails.mockResolvedValue(fjord);
-    render(<AssetChart />);
+    render(<AssetChart orderbookId="SIM-FJRD" />);
     await screen.findByRole('heading', { name: 'FJRD' });
 
     act(() => {
