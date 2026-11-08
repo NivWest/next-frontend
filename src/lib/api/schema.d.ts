@@ -465,6 +465,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask a question answered by the knowledge base with citations
+         * @description Answers a trading question using retrieval-augmented generation over TradeEdu knowledge base articles.
+         *     If no relevant chunks are found, returns an abstain answer without calling the LLM.
+         */
+        post: operations["askKnowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learn/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all knowledge base articles
+         * @description Returns summaries and tags of all knowledge base articles. Public and unauthenticated.
+         */
+        get: operations["listArticles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learn/articles/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one article by slug
+         * @description Returns the full article including markdown body and update timestamp.
+         */
+        get: operations["getArticle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learn/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search knowledge base articles using full-text search
+         * @description Performs full-text search across article chunks with ranking and headline snippets.
+         */
+        get: operations["searchArticles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -474,7 +555,7 @@ export interface components {
          *     else (enforced by `internal/handlers/openapi_parity_test.go`).
          * @enum {string}
          */
-        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "AI_BUDGET_EXCEEDED" | "AI_REFUSED" | "AI_UNAVAILABLE";
+        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "ARTICLE_NOT_FOUND" | "AI_BUDGET_EXCEEDED" | "AI_REFUSED" | "AI_UNAVAILABLE";
         /** @description The body of every error response. */
         Error: {
             /** @description Human-readable message. */
@@ -880,7 +961,7 @@ export interface components {
          * @description An AI feature that calls the LLM gateway. Each one has its own versioned prompt.
          * @enum {string}
          */
-        AIFeature: "instrument_brief";
+        AIFeature: "instrument_brief" | "knowledge_ask";
         /** @description One number of the instrument, in plain language. */
         BriefMetric: {
             /** @example P/E ratio */
@@ -965,6 +1046,74 @@ export interface components {
              */
             remaining_tokens: number;
             by_feature: components["schemas"]["AIFeatureUsage"][];
+        };
+        /** @description Summary of a knowledge base article (story NW-15). */
+        ArticleSummary: {
+            /** @example slippage */
+            slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            title: string;
+            /** @example How execution latency and volume affect order fill prices. */
+            summary: string;
+            /**
+             * @example [
+             *       "execution",
+             *       "risk"
+             *     ]
+             */
+            tags: string[];
+        };
+        ArticleListResponse: {
+            items: components["schemas"]["ArticleSummary"][];
+        };
+        /** @description Full knowledge base article with markdown content (story NW-15). */
+        Article: {
+            /** @example slippage */
+            slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            title: string;
+            /** @example How execution latency and volume affect order fill prices. */
+            summary: string;
+            tags: string[];
+            body_markdown: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description One search result chunk from the knowledge base (story NW-15). */
+        ArticleSearchResult: {
+            /** @example slippage */
+            slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            title: string;
+            /** @example slippage-what-is-slippage */
+            chunk_id: string;
+            /** @example <b>Slippage</b> is the difference between expected and executed price... */
+            snippet: string;
+        };
+        ArticleSearchResponse: {
+            items: components["schemas"]["ArticleSearchResult"][];
+        };
+        AskRequest: {
+            /** @example What is slippage? */
+            question: string;
+        };
+        Citation: {
+            /** @example slippage */
+            article_slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            article_title: string;
+            /** @example slippage-what-is-slippage */
+            chunk_id: string;
+            /** @example Slippage is the difference between the expected price and executed price. */
+            quoted_text: string;
+        };
+        AskResponse: {
+            answer: string;
+            citations: components["schemas"]["Citation"][];
+            /** @example fake */
+            model: string;
+            /** @enum {string} */
+            disclaimer: "AI-generated · educational, not financial advice";
         };
     };
     responses: {
@@ -1133,8 +1282,24 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description No article exists for the requested slug (story NW-15). */
+        ArticleNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "article not found",
+                 *       "code": "ARTICLE_NOT_FOUND"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
+        ArticleSlug: string;
         OrderbookID: string;
         WatchlistID: number;
     };
@@ -2322,6 +2487,146 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+        };
+    };
+    askKnowledge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Answer with citations or abstain response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "answer": "Slippage is the difference between the expected price and the execution price.",
+                     *       "citations": [
+                     *         {
+                     *           "article_slug": "slippage",
+                     *           "article_title": "Slippage: Why Orders Fill Off-Price",
+                     *           "chunk_id": "slippage-what-is-slippage",
+                     *           "quoted_text": "Slippage is the difference between expected price of a trade and the price at which the trade is executed."
+                     *         }
+                     *       ],
+                     *       "model": "fake",
+                     *       "disclaimer": "AI-generated · educational, not financial advice"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AskResponse"];
+                };
+            };
+            /** @description Question is empty or exceeds 500 characters. */
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["AIRefused"];
+            429: components["responses"]["AIBudgetExceeded"];
+            503: components["responses"]["AIUnavailable"];
+        };
+    };
+    listArticles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of articles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "slug": "slippage",
+                     *           "title": "Slippage: Why Orders Fill Off-Price",
+                     *           "summary": "How execution latency and volume affect order fill prices.",
+                     *           "tags": [
+                     *             "execution",
+                     *             "risk"
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ArticleListResponse"];
+                };
+            };
+        };
+    };
+    getArticle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: components["parameters"]["ArticleSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full article details. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Article"];
+                };
+            };
+            404: components["responses"]["ArticleNotFound"];
+        };
+    };
+    searchArticles: {
+        parameters: {
+            query: {
+                /** @description Search query. Cannot be blank. */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching article chunks ordered by relevance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "slug": "slippage",
+                     *           "title": "Slippage: Why Orders Fill Off-Price",
+                     *           "chunk_id": "slippage-what-is-slippage",
+                     *           "snippet": "<b>Slippage</b> is the difference between the expected price and executed price."
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ArticleSearchResponse"];
+                };
+            };
+            /** @description Query parameter q is empty or blank. */
+            400: components["responses"]["ValidationError"];
         };
     };
 }
