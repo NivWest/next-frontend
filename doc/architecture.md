@@ -48,7 +48,7 @@ The project follows a **Feature-Driven Layered Architecture**. Do **not** bloat 
 src/
 ├── app/                        # App Router: thin pages, one URL per screen
 │   ├── (app)/                  # Signed-in screens; layout = AuthGuard + AppShell
-│   │   └── dashboard/ orders/ watchlist/ analytics/ vault/ settings/   # one page.tsx each
+│   │   └── dashboard/ leaderboard/ orders/ watchlist/ analytics/ vault/ settings/   # one page.tsx each
 │   ├── (public)/               # Open to everyone; layout = AppShell
 │   │   ├── markets/page.tsx    # MarketSearch, ?q= prefills the search
 │   │   ├── markets/[orderbookId]/page.tsx  # InstrumentPage
@@ -68,6 +68,8 @@ src/
 │   │                           #   MetricCard, AllocationChart, EquityChart, RangeSelector
 │   ├── auth/                   # Login, guest demo, AuthGuard, safeNextPath
 │   ├── help/                   # Support center & knowledge base
+│   ├── leaderboard/            # Risk-adjusted leaderboard (NW-13): types.ts (mirrors api/openapi.yaml),
+│   │                           #   api/leaderboard.ts (getLeaderboard, updateProfile), Leaderboard (tabs, join form with unchecked consent, You highlight)
 │   ├── markets/                # Market data: api/market.ts, types.ts (mirror backend api/openapi.yaml), candles.ts,
 │   │                           #   MarketSearch, InstrumentPage, PriceChart, SimulatedBadge
 │   ├── orders/                 # Order history: types.ts (OrderPage, mirrors backend api/openapi.yaml), api/orders.ts
@@ -111,6 +113,7 @@ src/
 4. **Data Integration:**
    - `usePortfolioStore.fetchPortfolio()` (called by `Dashboard` when signed in) loads `GET /api/v1/portfolio` into `portfolio` (cash, total equity, unrealized/realized P&L, `positions` largest first, `top_movers`) and tracks `portfolioStatus` (`idle | loading | ready | error`; a failure keeps the last portfolio). `KPICards`, `HoldingsTable` and `TopMovers` only read the store.
    - `Orders` (`/orders`) pages through `GET /api/v1/orders?limit=20&cursor=…` with `listOrders()`, following `next_cursor` on "Load more".
+   - `Leaderboard` (`/leaderboard`) loads `GET /api/v1/leaderboard?metric=return|sharpe`. Traders join with a pseudonymous handle and explicit consent via `PATCH /api/v1/me`, ranking by raw return or risk-adjusted Sharpe ratio without exposing PII. The active user's row is highlighted with a "You" badge.
    - `OrderTicket` (on `InstrumentPage`) polls `/api/v1/market/instruments/{id}/quote` every 5 s, previews price, commission and total with `previewOrder()`, and submits through `placeOrder()`: `POST /api/v1/orders` with a fresh `Idempotency-Key` header per submit (a retry with the same key replays the original order). On success it calls `useUIStore.checkAuth()` so the profile balance (`Cash available`) updates; errors arrive as `ApiRequestError` and are mapped by `code`.
    - Market data goes through `src/features/markets/api/market.ts`; the backend serves either Avanza or the deterministic simulated market, selected by `MARKET_DATA_PROVIDER`.
    - `MarketSearch` searches `/api/v1/market/instruments?q=...`.
