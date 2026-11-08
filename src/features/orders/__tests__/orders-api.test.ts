@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
-import { listOrders } from '../api/orders';
+import { listOrders, updateOrderNote } from '../api/orders';
 
 type FetchMock = Mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>;
 
@@ -26,5 +26,19 @@ describe('listOrders', () => {
   ])('$params → $url', async ({ params, url }) => {
     await expect(listOrders(params)).resolves.toEqual({ items: [], next_cursor: null });
     expect(String(fetchMock.mock.calls[0][0])).toBe(url);
+  });
+});
+
+describe('updateOrderNote', () => {
+  it('PATCHes /api/v1/orders/{id}/note with the note body', async () => {
+    const order = { id: 42, note: 'Buying dip' };
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(order), { status: 200 }));
+
+    await expect(updateOrderNote(42, 'Buying dip')).resolves.toEqual(order);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe('/api/v1/orders/42/note');
+    expect(init?.method).toBe('PATCH');
+    expect(init?.body).toBe(JSON.stringify({ note: 'Buying dip' }));
   });
 });

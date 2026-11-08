@@ -406,4 +406,26 @@ describe('OrderTicket', () => {
     expect(screen.getByRole('button', { name: 'Buy FJRD' })).toBeInTheDocument();
     expect(previewValue('Price')).toBe('100.10 SEK');
   });
+
+  it('includes the optional thesis note in placeOrder and clears it on success', async () => {
+    signIn();
+    render(<OrderTicket orderbookId="SIM-FJRD" />);
+    await screen.findByRole('button', { name: 'Buy FJRD' });
+
+    const noteInput = screen.getByLabelText('Why are you making this trade?');
+    expect(noteInput).toHaveAttribute('maxlength', '500');
+    fireEvent.change(noteInput, { target: { value: 'Strong earnings momentum' } });
+    expect(screen.getByText('24/500')).toBeInTheDocument();
+
+    enterQuantity('10');
+    fireEvent.click(screen.getByRole('button', { name: 'Buy FJRD' }));
+
+    await waitFor(() =>
+      expect(mocks.placeOrder).toHaveBeenCalledWith(
+        { orderbook_id: 'SIM-FJRD', side: 'BUY', quantity: 10, note: 'Strong earnings momentum' },
+        'key-1',
+      ),
+    );
+    await waitFor(() => expect(noteInput).toHaveValue(''));
+  });
 });

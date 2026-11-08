@@ -15,6 +15,12 @@ export type OrderStatus = Schemas['OrderStatus'];
 /** Body of POST /api/v1/orders. Sent with an `Idempotency-Key` header (one key per submit). */
 export type OrderRequest = Schemas['OrderRequest'];
 
+/** Body of PATCH /api/v1/orders/{id}/note. */
+export type OrderNoteRequest = Schemas['OrderNoteRequest'];
+
+/** Maximum length of an order's thesis note (characters), matching `OrderRequest.note` and `OrderNoteRequest.note`. */
+export const MAX_ORDER_NOTE_LENGTH = 500;
+
 /** Body of POST /api/v1/orders (201, or 200 when replayed with the same Idempotency-Key). Timestamps are RFC 3339 UTC. */
 export type Order = Schemas['Order'];
 

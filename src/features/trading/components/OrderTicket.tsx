@@ -10,7 +10,7 @@ import { instrumentHref, loginHref } from '@/lib/routes';
 import { useUIStore } from '@/store/useUIStore';
 import { newIdempotencyKey, placeOrder } from '../api/orders';
 import { previewOrder } from '../preview';
-import type { OrderErrorCode, OrderSide } from '../types';
+import { MAX_ORDER_NOTE_LENGTH, type OrderErrorCode, type OrderSide } from '../types';
 
 interface OrderTicketProps {
   orderbookId: string;
@@ -66,10 +66,13 @@ function sideButtonClass(side: OrderSide, active: boolean): string {
 export function OrderTicket({ orderbookId }: OrderTicketProps) {
   const headingId = useId();
   const quantityId = useId();
+  const noteId = useId();
+  const noteHintId = useId();
   const { user, isAuthenticated, addToast, checkAuth } = useUIStore();
 
   const [side, setSide] = useState<OrderSide>('BUY');
   const [quantityText, setQuantityText] = useState('');
+  const [noteText, setNoteText] = useState('');
   const [quoteState, setQuoteState] = useState<QuoteState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,14 +121,25 @@ export function OrderTicket({ orderbookId }: OrderTicketProps) {
     setError(null);
   };
 
+  const handleNote = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setNoteText(event.target.value);
+    setError(null);
+  };
+
   const handleSubmit = async () => {
     if (preview === null || quantity === null || isSubmitting) return;
     setError(null);
     setIsSubmitting(true);
     try {
-      const order = await placeOrder({ orderbook_id: orderbookId, side, quantity }, newIdempotencyKey());
+      const trimmedNote = noteText.trim();
+      const payload =
+        trimmedNote !== ''
+          ? { orderbook_id: orderbookId, side, quantity, note: trimmedNote }
+          : { orderbook_id: orderbookId, side, quantity };
+      const order = await placeOrder(payload, newIdempotencyKey());
       const verb = order.side === 'SELL' ? 'Sold' : 'Bought';
       addToast(`${verb} ${order.quantity} ${order.symbol} @ ${order.fill_price.toFixed(2)}`, 'success');
+      setNoteText('');
       await checkAuth();
     } catch (e: unknown) {
       const message = orderErrorMessage(e);
@@ -187,6 +201,27 @@ export function OrderTicket({ orderbookId }: OrderTicketProps) {
               value={quantityText}
               onChange={handleQuantity}
               className="w-full bg-[#111111] border border-[#27272a] rounded-lg px-3 py-2 text-white placeholder:text-[#71717a] focus:outline-none focus:border-[#a1a1aa]"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <label htmlFor={noteId} className="block text-sm text-[#a1a1aa]">
+                Why are you making this trade?
+              </label>
+              <span id={noteHintId} className="text-xs text-[#71717a] tabular-nums">
+                {noteText.length}/{MAX_ORDER_NOTE_LENGTH}
+              </span>
+            </div>
+            <textarea
+              id={noteId}
+              rows={2}
+              maxLength={MAX_ORDER_NOTE_LENGTH}
+              aria-describedby={noteHintId}
+              placeholder="Optional thesis or reason for this trade…"
+              value={noteText}
+              onChange={handleNote}
+              className="w-full bg-[#111111] border border-[#27272a] rounded-lg px-3 py-2 text-sm text-white placeholder:text-[#71717a] focus:outline-none focus:border-[#a1a1aa]"
             />
           </div>
 
