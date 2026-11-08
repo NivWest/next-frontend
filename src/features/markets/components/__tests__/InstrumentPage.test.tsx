@@ -1,7 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { usePortfolioStore } from "@/store/usePortfolioStore";
-import { useUIStore } from "@/store/useUIStore";
 import type { CandlePeriod, InstrumentDetails, Quote } from "../../types";
 import { InstrumentPage } from "../InstrumentPage";
 
@@ -35,6 +33,19 @@ vi.mock("@/features/trading/components/OrderTicket", () => ({
         <h2 id="order-ticket-heading">Order ticket</h2>
       </section>
     );
+  },
+}));
+
+interface AddToWatchlistMockProps {
+  orderbookId: string;
+  symbol: string;
+}
+
+const addToWatchlistProps = vi.fn<(props: AddToWatchlistMockProps) => void>();
+vi.mock("@/features/watchlist/components/AddToWatchlistMenu", () => ({
+  AddToWatchlistMenu: (props: AddToWatchlistMockProps) => {
+    addToWatchlistProps(props);
+    return <button type="button">Add to watchlist</button>;
   },
 }));
 
@@ -75,8 +86,6 @@ function indicator(label: string): HTMLElement {
   return card;
 }
 
-const addToWatchlist = vi.fn<(ticker: string, name?: string) => Promise<void>>();
-const addToast = vi.fn();
 
 describe("InstrumentPage", () => {
   beforeEach(() => {
@@ -84,13 +93,9 @@ describe("InstrumentPage", () => {
     getQuoteMock.mockReset();
     priceChartProps.mockReset();
     orderTicketProps.mockReset();
-    addToWatchlist.mockReset();
-    addToast.mockReset();
+    addToWatchlistProps.mockReset();
     getDetailsMock.mockResolvedValue(fjordDetails());
     getQuoteMock.mockResolvedValue(fjordQuote());
-    addToWatchlist.mockResolvedValue(undefined);
-    usePortfolioStore.setState({ addToWatchlist });
-    useUIStore.setState({ addToast });
   });
 
   afterEach(() => {
@@ -156,7 +161,7 @@ describe("InstrumentPage", () => {
     expect(quote.compareDocumentPosition(ticket) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(ticket.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Trade Asset" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add to Watchlist" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Add to watchlist" }).length).toBeGreaterThan(0);
   });
 
   it("does not render the order ticket while loading or on error", async () => {
@@ -227,23 +232,32 @@ describe("InstrumentPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Failed to load instrument details.");
   });
 
-  it("adds the instrument to the watchlist by symbol and name", async () => {
+  it("puts the Add to watchlist menu in the page header, next to the title, with the symbol", async () => {
     render(<InstrumentPage orderbookId="SIM-FJRD" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Add to Watchlist" }));
-
-    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Fjord Robotics added to watchlist!", "success"));
-    expect(addToWatchlist).toHaveBeenCalledWith("FJRD", "Fjord Robotics");
+    const heading = await screen.findByRole("heading", { level: 1, name: "Fjord Robotics" });
+    const header = heading.parentElement;
+    if (!header) throw new Error("no header row");
+    expect(within(header).getByRole("button", { name: "Add to watchlist" })).toBeInTheDocument();
+    expect(addToWatchlistProps).toHaveBeenLastCalledWith({ orderbookId: "SIM-FJRD", symbol: "FJRD" });
+    // It comes before the quote, i.e. at the top of the page, away from the fixed bottom banner and toasts.
+    const quote = screen.getByRole("region", { name: "Quote" });
+    expect(header.compareDocumentPosition(quote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add to Watchlist" })).not.toBeInTheDocument();
   });
 
-  it("falls back to the orderbook id as ticker and toasts an error when saving fails", async () => {
+  it("falls back to the orderbook id as the symbol", async () => {
     getDetailsMock.mockResolvedValue(fjordDetails({ symbol: "" }));
-    addToWatchlist.mockRejectedValue(new Error("unauthorized"));
     render(<InstrumentPage orderbookId="SIM-FJRD" />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Add to Watchlist" }));
+    await screen.findByRole("heading", { level: 1, name: "Fjord Robotics" });
+    expect(addToWatchlistProps).toHaveBeenLastCalledWith({ orderbookId: "SIM-FJRD", symbol: "SIM-FJRD" });
+  });
 
-    await waitFor(() => expect(addToast).toHaveBeenCalledWith("Sign in to save to your watchlist", "error"));
-    expect(addToWatchlist).toHaveBeenCalledWith("SIM-FJRD", "Fjord Robotics");
+  it("does not offer the watchlist menu before the instrument has loaded", () => {
+    getDetailsMock.mockReturnValue(new Promise<InstrumentDetails>(() => {}));
+    render(<InstrumentPage orderbookId="SIM-FJRD" />);
+
+    expect(screen.queryByRole("button", { name: "Add to watchlist" })).not.toBeInTheDocument();
   });
 });

@@ -74,13 +74,14 @@ src/
 │   ├── trading/                # Order execution: types.ts (mirrors backend api/openapi.yaml), preview.ts (previewOrder,
 │   │                           #   mirrors backend pricing), api/orders.ts (placeOrder, newIdempotencyKey), OrderTicket
 │   ├── vault/                  # The Vault risk-free APY simulator
-│   └── watchlist/              # User watchlist management
+│   └── watchlist/              # Watchlists (NW-06): types.ts (mirrors backend api/openapi.yaml), api/watchlists.ts,
+│                               #   store/useWatchlistStore.ts, watchlist.ts helpers, Watchlist page, AddToWatchlistMenu
 ├── lib/                        # Shared utilities and network clients
 │   ├── api.ts                  # Centralized fetch client (routes to /api/v1/), rejects with ApiRequestError {status, code}
 │   ├── format.ts               # formatMoney ('100,000.00 SEK'), formatPercent ('+1.25%')
 │   └── routes.ts               # ROUTES and URL helpers (marketsSearchHref, instrumentHref, loginHref)
 └── store/                      # Cross-feature Zustand stores
-    ├── usePortfolioStore.ts    # Holdings, balance, watchlists
+    ├── usePortfolioStore.ts    # Holdings and balance (watchlists: src/features/watchlist/store)
     └── useUIStore.ts           # Auth session, toast notifications, cookie banner
 ```
 
@@ -100,7 +101,8 @@ src/
    - `fetchDashboard()` loads portfolio total value, positions, and cash balance from `/api/v1/portfolio/dashboard`.
    - `OrderTicket` (on `InstrumentPage`) polls `/api/v1/market/instruments/{id}/quote` every 5 s, previews price, commission and total with `previewOrder()`, and submits through `placeOrder()`: `POST /api/v1/orders` with a fresh `Idempotency-Key` header per submit (a retry with the same key replays the original order). On success it calls `useUIStore.checkAuth()` so the profile balance (`Cash available`) updates; errors arrive as `ApiRequestError` and are mapped by `code`.
    - Market data goes through `src/features/markets/api/market.ts`; the backend serves either Avanza or the deterministic simulated market, selected by `MARKET_DATA_PROVIDER`.
-   - `MarketSearch` searches `/api/v1/market/instruments?q=...`; `TopMovers` uses the same search to look up watchlist tickers.
+   - `MarketSearch` searches `/api/v1/market/instruments?q=...`.
+   - Watchlists go through `src/features/watchlist/api/watchlists.ts` (`/api/v1/watchlists…`) into `useWatchlistStore`; the backend prices every item from the live quote. `TopMovers`, the `/watchlist` page and `AddToWatchlistMenu` all read that store.
    - `InstrumentPage` loads `/api/v1/market/instruments/{id}` (details + key indicators) and `/api/v1/market/instruments/{id}/quote`.
    - `PriceChart` (used by `InstrumentPage` and `AssetChart`) fetches `/api/v1/market/instruments/{id}/candles?period=1d|1w|1m|3m|1y`. `AssetChart` charts `DEFAULT_CHART_INSTRUMENT` (`SIM-FJRD`) until NW-05.
 
