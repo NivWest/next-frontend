@@ -125,7 +125,7 @@ export function OrderTicket({ orderbookId }: OrderTicketProps) {
     try {
       const order = await placeOrder({ orderbook_id: orderbookId, side, quantity }, newIdempotencyKey());
       const verb = order.side === 'SELL' ? 'Sold' : 'Bought';
-      addToast(`${verb} ${order.quantity} ${order.symbol} @ ${order.fill_price.toFixed(2)}`, 'success');
+      addToast(`${verb} ${order.quantity} ${order.symbol} @ ${(order.fill_price ?? 0).toFixed(2)}`, 'success');
       await checkAuth();
     } catch (e: unknown) {
       const message = orderErrorMessage(e);

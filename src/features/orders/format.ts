@@ -1,4 +1,5 @@
 // Pure display helpers for the order history (story NW-05). Money goes through formatMoney (src/lib/format.ts).
+import { formatMoney } from '@/lib/format';
 import type { OrderSide, OrderStatus } from '@/features/trading/types';
 
 const SIDE_LABELS: Record<OrderSide, string> = {
@@ -35,4 +36,9 @@ export function formatOrderTime(iso: string, locale?: string, timeZone?: string)
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone });
+}
+
+/** An order's money field: `formatMoney` for a number, `—` while it is null (fill fields are null until FILLED). */
+export function formatOrderMoney(value: number | null): string {
+  return value === null ? '—' : formatMoney(value);
 }

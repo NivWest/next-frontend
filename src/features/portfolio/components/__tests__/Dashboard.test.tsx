@@ -31,6 +31,7 @@ function position(orderbookId: string, marketValue: number): PortfolioPosition {
     unrealized_pnl_percent: 0,
     day_change_percent: 0,
     weight: 50,
+    reserved_quantity: 0,
   };
 }
 
@@ -38,6 +39,8 @@ function portfolioWith(positions: PortfolioPosition[]): Portfolio {
   const holdings = positions.reduce((sum, p) => sum + p.market_value, 0);
   return {
     cash: 100000 - holdings,
+    reserved_cash: 0,
+    buying_power: 100000 - holdings,
     holdings_value: holdings,
     total_equity: 100000,
     unrealized_pnl: 0,
@@ -99,6 +102,8 @@ describe('Dashboard', () => {
     usePortfolioStore.setState({
       portfolio: {
         cash: 100000,
+        reserved_cash: 0,
+        buying_power: 100000,
         holdings_value: 0,
         total_equity: 100000,
         unrealized_pnl: 0,

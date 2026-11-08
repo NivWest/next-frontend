@@ -4,10 +4,9 @@ import { Activity, ListOrdered } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { OrderSide, OrderStatus } from '@/features/trading/types';
-import { formatMoney } from '@/lib/format';
 import { instrumentHref, ROUTES } from '@/lib/routes';
 import { listOrders } from '../api/orders';
-import { formatOrderTime, formatQuantity, sideLabel, statusLabel } from '../format';
+import { formatOrderMoney, formatOrderTime, formatQuantity, sideLabel, statusLabel } from '../format';
 import type { Order } from '../types';
 
 const PAGE_SIZE = 20;
@@ -46,9 +45,9 @@ function OrderRow({ order }: { order: Order }) {
       </td>
       <td className={`px-4 py-3 font-medium ${SIDE_CLASSES[order.side]}`}>{sideLabel(order.side)}</td>
       <td className="px-4 py-3 text-right text-white tabular-nums">{formatQuantity(order.quantity)}</td>
-      <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatMoney(order.fill_price)}</td>
-      <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatMoney(order.commission)}</td>
-      <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatMoney(order.total)}</td>
+      <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatOrderMoney(order.fill_price)}</td>
+      <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatOrderMoney(order.commission)}</td>
+      <td className="px-4 py-3 text-right text-white tabular-nums whitespace-nowrap">{formatOrderMoney(order.total)}</td>
       <td className={`px-4 py-3 ${STATUS_CLASSES[order.status]}`}>{statusLabel(order.status)}</td>
       <td className="px-4 py-3 text-[#a1a1aa] whitespace-nowrap">
         <time dateTime={order.created_at}>{formatOrderTime(order.created_at)}</time>
