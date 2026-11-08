@@ -80,7 +80,9 @@ src/
 │   └── watchlist/              # Watchlists (NW-06): types.ts (mirrors backend api/openapi.yaml), api/watchlists.ts,
 │                               #   store/useWatchlistStore.ts, watchlist.ts helpers, Watchlist page, AddToWatchlistMenu
 ├── lib/                        # Shared utilities and network clients
-│   ├── api.ts                  # Centralized fetch client (routes to /api/v1/), rejects with ApiRequestError {status, code}
+│   ├── api.ts                  # Centralized fetch client (routes to /api/v1/), rejects with ApiRequestError {status, code};
+│   │                           #   typed apiGet/apiPost/apiPut/apiPatch/apiDelete over the generated contract
+│   ├── api/schema.d.ts         # GENERATED from api/openapi.yaml by `npm run api:gen` (never edit by hand)
 │   ├── format.ts               # formatMoney ('100,000.00 SEK'), formatPercent ('+1.25%')
 │   └── routes.ts               # ROUTES and URL helpers (marketsSearchHref, instrumentHref, loginHref)
 └── store/                      # Cross-feature Zustand stores
@@ -100,7 +102,11 @@ src/
    - On initial load, `Providers` calls `useUIStore.checkAuth()` once, which requests `/api/v1/user/profile`.
    - If unauthenticated on an `(app)` route, `AuthGuard` sends the visitor to `/login`, which offers a direct Google OAuth link to `/api/v1/auth/login` and the guest demo.
    - On 401/403 responses, `src/lib/api.ts` dispatches a window event `'auth-error'` to prompt re-authentication.
-3. **Data Integration:**
+3. **API Contract (story NW-07):**
+   - The backend's `api/openapi.yaml` is the source of truth. This repo vendors it at `api/openapi.yaml` (`npm run api:sync`) and generates `src/lib/api/schema.d.ts` from it (`npm run api:gen`, openapi-typescript); CI runs `npm run api:check`.
+   - Feature `types.ts` files re-export generated schema types (`Schemas['Order']`, …) under stable names; API modules call the typed helpers in `src/lib/api.ts`, so a renamed path, a missing parameter or a wrong body fails `tsc`.
+   - The interactive reference is the backend's `/api/docs`, also reachable through this app (rewrite in `next.config.ts`).
+4. **Data Integration:**
    - `usePortfolioStore.fetchPortfolio()` (called by `Dashboard` when signed in) loads `GET /api/v1/portfolio` into `portfolio` (cash, total equity, unrealized/realized P&L, `positions` largest first, `top_movers`) and tracks `portfolioStatus` (`idle | loading | ready | error`; a failure keeps the last portfolio). `KPICards`, `HoldingsTable` and `TopMovers` only read the store.
    - `Orders` (`/orders`) pages through `GET /api/v1/orders?limit=20&cursor=…` with `listOrders()`, following `next_cursor` on "Load more".
    - `OrderTicket` (on `InstrumentPage`) polls `/api/v1/market/instruments/{id}/quote` every 5 s, previews price, commission and total with `previewOrder()`, and submits through `placeOrder()`: `POST /api/v1/orders` with a fresh `Idempotency-Key` header per submit (a retry with the same key replays the original order). On success it calls `useUIStore.checkAuth()` so the profile balance (`Cash available`) updates; errors arrive as `ApiRequestError` and are mapped by `code`.

@@ -15,7 +15,7 @@ When implementing a new feature in this repository, follow these precise steps:
 3. **Module Construction:**
    - For a new feature, create `src/features/<feature-name>/` with subdirectories: `components/`, `store/`, `api/`, and `types.ts`.
    - Ensure the Next.js `app/` folder only contains thin route controllers, not complex UI logic.
-4. **Development:** Follow the Coding Standards outlined in Section 2.
+4. **Development:** Follow the Coding Standards outlined in Section 2. When the feature needs new or changed endpoints, get the backend contract first, then `npm run api:sync && npm run api:gen`, re-export the new schemas from the feature's `types.ts` and call them through the typed helpers in `src/lib/api.ts`.
 5. **Testing & Validation:** Follow the Verification Steps in Section 3.
 6. **Commit Strategy:** 
    - Use Conventional Commits (`feat: add something`, `fix: resolve issue`, etc.).
@@ -31,7 +31,7 @@ When implementing a new feature in this repository, follow these precise steps:
 - **Never use `any`:** Replace all occurrences of `any` with strict interfaces or `unknown` (narrowed with type guards/schemas).
 - **Use `interface` for object models & component props:** Allow for declaration merging and clearer IDE errors. Use `type` for unions, primitives, and tuples.
 - **Explicit Return Types:** Specify return types on all helper functions, store actions, and API functions.
-- **Create Domain Types in `types.ts`:** Define exact models for Avanza stock hits, positions, chart points, and order tickets.
+- **Domain Types in `types.ts`:** API DTOs are re-exports of the generated contract types (`Schemas['…']` from `@/lib/api`), never hand-written copies; only frontend-only models (previews, view state) are defined by hand.
 
 ### 2.2 React 19 & Component Patterns
 - **Standard Function Declarations:** Define components using `export function ComponentName(props: ComponentProps) {}`. Never use `const Component = () => {}` or `React.FC`.
@@ -64,19 +64,21 @@ When completing tasks or submitting changes, you must run the following checks:
    - Use strict unit test mocks for external services (e.g. Avanza API proxy) to prevent side effects in tests.
    - Do not use database fakes directly in the frontend; mock the API layer (`src/lib/api.ts` responses) instead.
    
-2. **Type Checking:**
+2. **Contract:** `npm run api:check` must pass (generated `src/lib/api/schema.d.ts` up to date with `api/openapi.yaml`).
+
+3. **Type Checking:**
    ```bash
    npx tsc --noEmit
    ```
    Must pass with **0 errors**.
 
-3. **Linting & React 19 Checks:**
+4. **Linting & React 19 Checks:**
    ```bash
    npm run lint
    ```
    Ensure all ESLint errors (specifically `no-explicit-any`, `react-hooks/set-state-in-effect`, and unescaped entities) are resolved before finishing.
 
-4. **Build Note (Sandbox Environments):**
+5. **Build Note (Sandbox Environments):**
    - `npm run build` utilizes Turbopack and attempts to download Google Fonts (`next/font/google`) during compilation. In offline or network-isolated sandboxes, font fetching will fail. Rely on `npx tsc --noEmit` and `npm run lint` for isolated code verification.
 
 
@@ -108,4 +110,4 @@ Feature PRs are squash-merged, so the **PR title becomes the commit on `dev`** a
 ### 4.3. Pull Requests
 - Opened and merged by humans. AI agents (the `/story` workflow in the platform workspace) only push `feature/*` branches.
 - **Body:** summary and design decisions, the acceptance criteria as a checklist, and `Closes NivWest/platform#<id>` when there is an issue.
-- CI must pass: `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`.
+- CI must pass: `npm run api:check`, `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run build`.
