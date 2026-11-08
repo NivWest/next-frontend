@@ -493,6 +493,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The signed-in user's vault balance, APY, interest earned, and idle cash projection
+         * @description Returns the user's vault status. Interest compounds daily and is accrued lazily on every read or mutation:
+         *     balance × (1 + APY)^(elapsed_days/365).
+         */
+        get: operations["getVault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/deposits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deposit uninvested cash into the vault
+         * @description Transfers cash from buying power into the vault. Accrues pending interest first.
+         */
+        post: operations["depositVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/withdrawals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw cash from the vault back to cash balance
+         * @description Transfers cash from the vault back to uninvested cash. Accrues pending interest first.
+         */
+        post: operations["withdrawVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the signed-in user's vault transactions
+         * @description Lists the user's deposits and withdrawals newest first.
+         */
+        get: operations["listVaultTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -502,7 +583,7 @@ export interface components {
          *     else (enforced by `internal/handlers/openapi_parity_test.go`).
          * @enum {string}
          */
-        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "ORDER_NOT_FOUND" | "ORDER_NOT_OPEN";
+        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "ORDER_NOT_FOUND" | "ORDER_NOT_OPEN" | "INSUFFICIENT_VAULT_BALANCE";
         /** @description The body of every error response. */
         Error: {
             /** @description Human-readable message. */
@@ -854,10 +935,11 @@ export interface components {
         };
         /**
          * @description The signed-in user's portfolio. Money in SEK, 2 decimals.
-         *     - holdings_value = Σ positions.market_value; total_equity = cash + holdings_value;
+         *     - holdings_value = Σ positions.market_value; total_equity = cash + holdings_value + vault_value;
          *     - unrealized_pnl = Σ positions.unrealized_pnl;
          *     - realized_pnl accumulates over every SELL: sell total (net proceeds) − avg_cost × quantity sold;
-         *     - reserved_cash = Σ reservations of OPEN BUY orders (still part of cash); buying_power = cash − reserved_cash.
+         *     - reserved_cash = Σ reservations of OPEN BUY orders (still part of cash); buying_power = cash − reserved_cash;
+         *     - vault_value is the balance currently in The Vault (story NW-11).
          *     positions are sorted by market_value desc (largest holding first), then orderbook_id asc.
          *     top_movers is at most 5 positions sorted by day_change_percent desc, then orderbook_id asc.
          *     Both arrays are empty (never null) without positions.
@@ -867,6 +949,8 @@ export interface components {
             reserved_cash: number;
             buying_power: number;
             holdings_value: number;
+            /** @description Balance currently in the vault (story NW-11). */
+            vault_value: number;
             total_equity: number;
             unrealized_pnl: number;
             realized_pnl: number;
@@ -940,6 +1024,39 @@ export interface components {
             data_points: number;
             /** @description Positions by value desc (then orderbook id asc), then the cash slice, which is always present. */
             allocation: components["schemas"]["AllocationSlice"][];
+        };
+        /** @description The signed-in user's vault status and risk-free yield. */
+        Vault: {
+            /** @description Current balance in the vault in SEK, 2 decimals. */
+            balance: number;
+            /** @description Annual percentage yield as a fraction (e.g. 0.051). */
+            apy: number;
+            /** @description Total accrued interest earned in SEK, 2 decimals. */
+            interest_earned_total: number;
+            /** @description Projected 30-day interest on uninvested cash (idle cash × APY × 30 / 365) in SEK, 2 decimals. */
+            projected_monthly_interest_on_idle_cash: number;
+        };
+        VaultTransferRequest: {
+            /** @description Amount in SEK, positive, at most 2 decimal places. */
+            amount: number;
+        };
+        VaultTransaction: {
+            id: number;
+            /** @enum {string} */
+            type: "DEPOSIT" | "WITHDRAWAL";
+            /** @description Amount in SEK, 2 decimals. */
+            amount: number;
+            /**
+             * Format: date-time
+             * @description RFC 3339 UTC.
+             */
+            created_at: string;
+        };
+        VaultTransactionListResponse: {
+            /** @description Vault transactions, newest first. */
+            items: components["schemas"]["VaultTransaction"][];
+            /** @description Kept for list pagination convention; always null for now. */
+            next_cursor: string | null;
         };
     };
     responses: {
@@ -2236,6 +2353,7 @@ export interface operations {
                      *       "reserved_cash": 0,
                      *       "buying_power": 98996.5,
                      *       "holdings_value": 1100,
+                     *       "vault_value": 0,
                      *       "total_equity": 100096.5,
                      *       "unrealized_pnl": 96.5,
                      *       "realized_pnl": 0,
@@ -2349,6 +2467,211 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PortfolioAnalytics"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The vault status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "balance": 20000,
+                     *       "apy": 0.051,
+                     *       "interest_earned_total": 0,
+                     *       "projected_monthly_interest_on_idle_cash": 335.34
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Vault"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    depositVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "amount": 20000
+                 *     }
+                 */
+                "application/json": components["schemas"]["VaultTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Deposited successfully. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": 1,
+                     *       "type": "DEPOSIT",
+                     *       "amount": 20000,
+                     *       "created_at": "2026-11-08T09:41:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VaultTransaction"];
+                };
+            };
+            /** @description Amount is non-positive or has more than 2 decimal places. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "amount must be positive with at most 2 decimals",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Amount exceeds buying power. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "insufficient buying power",
+                     *       "code": "INSUFFICIENT_FUNDS"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    withdrawVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "amount": 5000
+                 *     }
+                 */
+                "application/json": components["schemas"]["VaultTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Withdrawn successfully. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": 2,
+                     *       "type": "WITHDRAWAL",
+                     *       "amount": 5000,
+                     *       "created_at": "2026-11-08T09:42:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VaultTransaction"];
+                };
+            };
+            /** @description Amount is non-positive or has more than 2 decimal places. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "amount must be positive with at most 2 decimals",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Amount exceeds vault balance. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "insufficient vault balance",
+                     *       "code": "INSUFFICIENT_VAULT_BALANCE"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listVaultTransactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The list of vault transactions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": 2,
+                     *           "type": "WITHDRAWAL",
+                     *           "amount": 5000,
+                     *           "created_at": "2026-11-08T09:42:00Z"
+                     *         },
+                     *         {
+                     *           "id": 1,
+                     *           "type": "DEPOSIT",
+                     *           "amount": 20000,
+                     *           "created_at": "2026-11-08T09:41:00Z"
+                     *         }
+                     *       ],
+                     *       "next_cursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VaultTransactionListResponse"];
                 };
             };
             401: components["responses"]["Unauthenticated"];

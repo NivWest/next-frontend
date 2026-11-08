@@ -32,6 +32,7 @@ function portfolio(overrides: Partial<Portfolio> = {}): Portfolio {
     reserved_cash: 0,
     buying_power: 98996.5,
     holdings_value: 1100,
+    vault_value: 0,
     total_equity: 100096.5,
     unrealized_pnl: 96.5,
     realized_pnl: 0,

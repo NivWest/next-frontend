@@ -11,6 +11,7 @@ const fresh: Portfolio = {
   reserved_cash: 0,
   buying_power: 100000,
   holdings_value: 0,
+  vault_value: 0,
   total_equity: 100000,
   unrealized_pnl: 0,
   realized_pnl: 0,
