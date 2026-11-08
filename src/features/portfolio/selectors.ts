@@ -1,6 +1,6 @@
 // Pure helpers over the GET /portfolio body (story NW-05). Money is SEK with 2 decimals.
 import { formatMoney } from '@/lib/format';
-import type { Portfolio } from './types';
+import type { Portfolio, PortfolioPosition } from './types';
 
 export type PnlTone = 'positive' | 'negative' | 'neutral';
 
@@ -39,4 +39,32 @@ export function formatSignedMoney(value: number, currency = 'SEK'): string {
   if (tone === 'neutral') return formatMoney(0, currency);
   const text = formatMoney(value, currency);
   return tone === 'positive' ? `+${text}` : text;
+}
+
+/** The live parts of a quote a holding row needs (story NW-09). */
+export interface LivePrice {
+  last: number;
+  change_percent: number;
+}
+
+/**
+ * `position` revalued at a streamed price (pure): last price, market value (quantity × last), unrealized P&L
+ * against the position's cost (market_value − unrealized_pnl from the server, so commissions stay included)
+ * and the day change. Weight stays the server's until the next portfolio load. Returns `position` itself for a
+ * missing or non-positive price.
+ */
+export function withLivePrice(position: PortfolioPosition, live: LivePrice | null | undefined): PortfolioPosition {
+  if (!live || !(live.last > 0)) return position;
+  if (live.last === position.last_price && live.change_percent === position.day_change_percent) return position;
+  const cost = position.market_value - position.unrealized_pnl;
+  const marketValue = roundCents(position.quantity * live.last);
+  const pnl = roundCents(marketValue - cost);
+  return {
+    ...position,
+    last_price: live.last,
+    market_value: marketValue,
+    unrealized_pnl: pnl,
+    unrealized_pnl_percent: cost > 0 ? roundCents((pnl / cost) * 100) : 0,
+    day_change_percent: live.change_percent,
+  };
 }

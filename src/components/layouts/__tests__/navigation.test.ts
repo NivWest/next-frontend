@@ -6,6 +6,7 @@ describe('NAV_ITEMS', () => {
   it('lists the main screens in order, ending with Markets', () => {
     expect(NAV_ITEMS.main.map((item) => [item.label, item.href])).toEqual([
       ['Dashboard', ROUTES.dashboard],
+      ['Leaderboard', ROUTES.leaderboard],
       ['Watchlist', ROUTES.watchlist],
       ['The Vault', ROUTES.vault],
       ['Orders', ROUTES.orders],

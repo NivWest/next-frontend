@@ -12,6 +12,7 @@ const guest: UserProfile = {
   role: 'guest',
   balance: 100000,
   is_guest: true,
+  leaderboard_opt_in: false,
 };
 
 const member: UserProfile = {
@@ -21,6 +22,7 @@ const member: UserProfile = {
   role: 'member',
   balance: 100000,
   is_guest: false,
+  leaderboard_opt_in: false,
 };
 
 const navigation = vi.hoisted(() => ({

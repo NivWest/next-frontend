@@ -3,6 +3,7 @@
 
 export const ROUTES = {
   dashboard: '/dashboard',
+  leaderboard: '/leaderboard',
   watchlist: '/watchlist',
   vault: '/vault',
   orders: '/orders',

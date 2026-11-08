@@ -1,15 +1,19 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { ApiRequestError } from '@/lib/api';
+import { useUIStore } from '@/store/useUIStore';
 import type { ListOrdersParams, Order, OrderPage } from '../../types';
 import { Orders } from '../Orders';
 
 const mocks = vi.hoisted(() => ({
   listOrders: vi.fn<(params?: ListOrdersParams) => Promise<OrderPage>>(),
+  cancelOrder: vi.fn<(id: number) => Promise<Order>>(),
 }));
 
 vi.mock('../../api/orders', () => ({
   listOrders: (params?: ListOrdersParams) => mocks.listOrders(params),
+  cancelOrder: (id: number) => mocks.cancelOrder(id),
 }));
 
 function order(overrides: Partial<Order> = {}): Order {
@@ -22,9 +26,12 @@ function order(overrides: Partial<Order> = {}): Order {
     type: 'MARKET',
     status: 'FILLED',
     quantity: 10,
+    limit_price: null,
+    stop_price: null,
     fill_price: 100.1,
     commission: 2.5,
     total: 1003.5,
+    reject_reason: null,
     created_at: '2026-10-26T09:42:00Z',
     filled_at: '2026-10-26T09:42:00Z',
     ...overrides,
@@ -52,13 +59,21 @@ function bodyRows(table: HTMLElement): HTMLElement[] {
   return within(table).getAllByRole('row').slice(1);
 }
 
+const initialState = useUIStore.getState();
+let addToast: Mock<(message: string, type?: 'success' | 'error' | 'info') => void>;
+
 describe('Orders', () => {
   beforeEach(() => {
     mocks.listOrders.mockReset();
+    mocks.cancelOrder.mockReset();
+    addToast = vi.fn();
+    useUIStore.setState({ ...initialState, addToast });
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    vi.useRealTimers();
+    useUIStore.setState(initialState, true);
     vi.restoreAllMocks();
   });
 
@@ -207,5 +222,127 @@ describe('Orders', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(mocks.listOrders).toHaveBeenCalledTimes(2);
     expect(mocks.listOrders).toHaveBeenLastCalledWith({ limit: 20 });
+  });
+
+  it('renders Open and History tabs and switches between them', async () => {
+    mocks.listOrders.mockImplementation(async (params) => {
+      if (params?.status?.includes('OPEN')) {
+        return page([order({ id: 99, type: 'LIMIT', status: 'OPEN', limit_price: 95, fill_price: null, commission: null, total: null })]);
+      }
+      return page([order()]);
+    });
+
+    render(<Orders />);
+    await findTable();
+
+    // Default tab is History
+    const historyTab = screen.getByRole('tab', { name: 'History' });
+    const openTab = screen.getByRole('tab', { name: 'Open' });
+    expect(historyTab).toHaveAttribute('aria-selected', 'true');
+    expect(openTab).toHaveAttribute('aria-selected', 'false');
+
+    // Switch to Open tab
+    fireEvent.click(openTab);
+    expect(openTab).toHaveAttribute('aria-selected', 'true');
+    expect(historyTab).toHaveAttribute('aria-selected', 'false');
+
+    const openTable = await screen.findByRole('table', { name: 'Open orders' });
+    expect(openTable).toBeInTheDocument();
+    expect(within(openTable).getByText('Limit')).toBeInTheDocument();
+    expect(within(openTable).getByText('95.00 SEK')).toBeInTheDocument();
+    expect(within(openTable).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+
+    // Switch back to History
+    fireEvent.click(historyTab);
+    expect(await findTable()).toBeInTheDocument();
+  });
+
+  it('AC7: Open tab displays "Cancel" button, clicking it calls cancelOrder and moves order to History with status Cancelled', async () => {
+    const openOrder = order({
+      id: 55,
+      type: 'LIMIT',
+      status: 'OPEN',
+      limit_price: 95,
+      fill_price: null,
+      commission: null,
+      total: null,
+    });
+    const cancelledOrder = order({
+      id: 55,
+      type: 'LIMIT',
+      status: 'CANCELLED',
+      limit_price: 95,
+      fill_price: null,
+      commission: null,
+      total: null,
+    });
+
+    mocks.listOrders.mockImplementation(async (params) => {
+      if (params?.status?.includes('OPEN')) {
+        return page([openOrder]);
+      }
+      return page([cancelledOrder]);
+    });
+    mocks.cancelOrder.mockResolvedValue(cancelledOrder);
+
+    render(<Orders />);
+    await findTable();
+
+    // Go to Open tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Open' }));
+    const openTable = await screen.findByRole('table', { name: 'Open orders' });
+    const cancelBtn = within(openTable).getByRole('button', { name: 'Cancel' });
+
+    // Click Cancel
+    fireEvent.click(cancelBtn);
+
+    await waitFor(() => expect(mocks.cancelOrder).toHaveBeenCalledWith(55));
+    expect(addToast).toHaveBeenCalledWith('Order cancelled', 'success');
+
+    // Automatically moved to History tab with Cancelled status
+    const historyTab = screen.getByRole('tab', { name: 'History' });
+    expect(historyTab).toHaveAttribute('aria-selected', 'true');
+    const historyTable = await findTable();
+    expect(within(historyTable).getByText('Cancelled')).toBeInTheDocument();
+  });
+
+  it('polls open orders every 3 seconds while Open tab is visible', async () => {
+    vi.useFakeTimers();
+    mocks.listOrders.mockImplementation(async (params) => {
+      if (params?.status?.includes('OPEN')) {
+        return page([order({ id: 10, status: 'OPEN' })]);
+      }
+      return page([]);
+    });
+
+    const { unmount } = render(<Orders />);
+    await act(async () => {});
+
+    // Switch to Open tab
+    fireEvent.click(screen.getByRole('tab', { name: 'Open' }));
+    await act(async () => {});
+
+    // Initial open orders fetch
+    expect(mocks.listOrders).toHaveBeenCalledWith({ limit: 20, status: ['OPEN'] });
+    const initialCalls = mocks.listOrders.mock.calls.length;
+
+    // Advance 3s
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(mocks.listOrders.mock.calls.length).toBe(initialCalls + 1);
+
+    // Switch to History tab (should stop polling open orders)
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await act(async () => {});
+    const historyCalls = mocks.listOrders.mock.calls.length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    // No additional open polls
+    expect(mocks.listOrders.mock.calls.length).toBe(historyCalls);
+
+    unmount();
   });
 });
