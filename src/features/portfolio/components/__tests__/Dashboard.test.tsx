@@ -7,10 +7,8 @@ import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
 
 // The chart and movers widgets fetch market data on mount; they are not under test here.
-vi.mock('../AssetChart', () => ({
-  AssetChart: ({ orderbookId }: { orderbookId: string | null }) => (
-    <div data-testid="asset-chart" data-orderbook-id={orderbookId ?? 'none'} />
-  ),
+vi.mock('@/features/analytics/components/EquityChart', () => ({
+  EquityChart: () => <div data-testid="equity-chart" />,
 }));
 vi.mock('../TopMovers', () => ({
   TopMovers: () => <div data-testid="top-movers" />,
@@ -119,29 +117,16 @@ describe('Dashboard', () => {
     expect(screen.getByRole('group', { name: 'Total equity' })).toHaveTextContent('100,000.00 SEK');
     expect(screen.getByRole('group', { name: 'Cash' })).toHaveTextContent('100,000.00 SEK');
     expect(screen.getByText('No positions yet')).toBeInTheDocument();
-    expect(screen.getByTestId('asset-chart')).toBeInTheDocument();
+    expect(screen.getByTestId('equity-chart')).toBeInTheDocument();
   });
 
-  it('charts nothing (null) while there is no portfolio or no position', () => {
-    usePortfolioStore.setState({ portfolio: null, portfolioStatus: 'loading' });
-    const { unmount } = render(<Dashboard />);
-    expect(screen.getByTestId('asset-chart')).toHaveAttribute('data-orderbook-id', 'none');
-    unmount();
-
-    usePortfolioStore.setState({ portfolio: portfolioWith([]), portfolioStatus: 'ready' });
-    render(<Dashboard />);
-    expect(screen.getByTestId('asset-chart')).toHaveAttribute('data-orderbook-id', 'none');
-  });
-
-  it('charts the largest holding by market value', () => {
-    // Not sorted on purpose: the selector picks the largest, not the first.
-    usePortfolioStore.setState({
-      portfolio: portfolioWith([position('SIM-SMAL', 500), position('SIM-BIGG', 5000), position('SIM-MIDD', 1000)]),
-      portfolioStatus: 'ready',
-    });
+  it('shows the equity chart instead of the single-instrument chart (story NW-10)', () => {
+    usePortfolioStore.setState({ portfolio: portfolioWith([position('SIM-BIGG', 5000)]), portfolioStatus: 'ready' });
 
     render(<Dashboard />);
 
-    expect(screen.getByTestId('asset-chart')).toHaveAttribute('data-orderbook-id', 'SIM-BIGG');
+    expect(screen.getByTestId('equity-chart')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Asset chart' })).toBeNull();
+    expect(screen.queryByText('Largest holding')).toBeNull();
   });
 });

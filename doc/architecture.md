@@ -63,7 +63,9 @@ src/
 │   ├── layouts/                # AppShell.tsx (sidebar + mobile drawer), Sidebar.tsx, navigation.ts (NAV_ITEMS, isNavItemActive)
 │   └── ui/                     # Shared UI components (CookieBanner.tsx, ToastContainer.tsx)
 ├── features/                   # Domain-specific feature modules
-│   ├── analytics/              # Performance metrics & asset allocation
+│   ├── analytics/              # Performance metrics & asset allocation (NW-10): types.ts (mirrors api/openapi.yaml),
+│   │                           #   api/analytics.ts (getPortfolioAnalytics, getEquityHistory), format.ts, Analytics,
+│   │                           #   MetricCard, AllocationChart, EquityChart, RangeSelector
 │   ├── auth/                   # Login, guest demo, AuthGuard, safeNextPath
 │   ├── help/                   # Support center & knowledge base
 │   ├── markets/                # Market data: api/market.ts, types.ts (mirror backend api/openapi.yaml), candles.ts,
@@ -72,7 +74,7 @@ src/
 │   │                           #   api/orders.ts (listOrders, getOrder, cancelOrder), format.ts, Orders component
 │   │                           #   with Open and History tabs, 3 s polling on Open, cancel action
 │   ├── portfolio/              # GET /portfolio: types.ts (Portfolio, PortfolioPosition), api/portfolio.ts (getPortfolio),
-│   │                           #   selectors.ts (largestHolding, pnlTone, …), Dashboard widgets (KPICards, AssetChart,
+│   │                           #   selectors.ts (costBasis, pnlTone, …), Dashboard widgets (KPICards, EquityChart,
 │   │                           #   HoldingsTable, TopMovers)
 │   ├── settings/               # Profile & GDPR Right to Erasure
 │   ├── trading/                # Order execution (NW-04, NW-08): types.ts (mirrors backend api/openapi.yaml),
@@ -116,7 +118,7 @@ src/
    - `MarketSearch` searches `/api/v1/market/instruments?q=...`.
    - Watchlists go through `src/features/watchlist/api/watchlists.ts` (`/api/v1/watchlists…`) into `useWatchlistStore`; the backend prices every item from the live quote. The `/watchlist` page and `AddToWatchlistMenu` read that store.
    - `InstrumentPage` loads `/api/v1/market/instruments/{id}` (details + key indicators) and `/api/v1/market/instruments/{id}/quote`.
-   - `PriceChart` (used by `InstrumentPage` and `AssetChart`) fetches `/api/v1/market/instruments/{id}/candles?period=1d|1w|1m|3m|1y`. `Dashboard` passes `AssetChart` the largest holding (`largestHolding(portfolio)?.orderbook_id ?? null`); with null it shows an empty state and fetches nothing.
+   - `PriceChart` (used by `InstrumentPage`) fetches `/api/v1/market/instruments/{id}/candles?period=1d|1w|1m|3m|1y`. `EquityChart` on `/dashboard` fetches `/api/v1/portfolio/history?range=1d|1w|1m|all`.
 
 ---
 
