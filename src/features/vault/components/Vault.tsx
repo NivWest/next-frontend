@@ -4,9 +4,10 @@ import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
 import { Vault as VaultIcon, ArrowRightLeft, Percent, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
+import { formatMoney } from '@/lib/format';
 
 export function Vault() {
-  const { cash } = usePortfolioStore();
+  const cash = usePortfolioStore((state) => state.portfolio?.cash ?? 0);
   const { addToast, isAuthenticated } = useUIStore();
   const [amount, setAmount] = useState('');
   const [vaultBalance, setVaultBalance] = useState(0); // Mock local state for vault
@@ -75,7 +76,7 @@ export function Vault() {
                 {!isProcessing && <ArrowRightLeft size={16} />}
               </button>
             </div>
-            <div className="text-xs text-[#a1a1aa] mt-3">Available cash to transfer: ${cash.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            <div className="text-xs text-[#a1a1aa] mt-3">Available cash to transfer: {formatMoney(cash)}</div>
           </div>
         </div>
 

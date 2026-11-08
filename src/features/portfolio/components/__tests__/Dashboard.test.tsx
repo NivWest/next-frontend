@@ -2,26 +2,58 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { Dashboard } from '../Dashboard';
+import type { Portfolio, PortfolioPosition } from '@/features/portfolio/types';
 import { usePortfolioStore } from '@/store/usePortfolioStore';
 import { useUIStore } from '@/store/useUIStore';
 
 // The chart and movers widgets fetch market data on mount; they are not under test here.
 vi.mock('../AssetChart', () => ({
-  AssetChart: () => <div data-testid="asset-chart" />,
+  AssetChart: ({ orderbookId }: { orderbookId: string | null }) => (
+    <div data-testid="asset-chart" data-orderbook-id={orderbookId ?? 'none'} />
+  ),
 }));
 vi.mock('../TopMovers', () => ({
   TopMovers: () => <div data-testid="top-movers" />,
 }));
 
 const initialPortfolio = usePortfolioStore.getState();
+
+function position(orderbookId: string, marketValue: number): PortfolioPosition {
+  return {
+    orderbook_id: orderbookId,
+    symbol: orderbookId.replace('SIM-', ''),
+    name: `${orderbookId} AB`,
+    quantity: 1,
+    avg_cost: marketValue,
+    last_price: marketValue,
+    market_value: marketValue,
+    unrealized_pnl: 0,
+    unrealized_pnl_percent: 0,
+    day_change_percent: 0,
+    weight: 50,
+  };
+}
+
+function portfolioWith(positions: PortfolioPosition[]): Portfolio {
+  const holdings = positions.reduce((sum, p) => sum + p.market_value, 0);
+  return {
+    cash: 100000 - holdings,
+    holdings_value: holdings,
+    total_equity: 100000,
+    unrealized_pnl: 0,
+    realized_pnl: 0,
+    positions,
+    top_movers: positions,
+  };
+}
 const initialUI = useUIStore.getState();
 
-let fetchDashboard: Mock<() => Promise<void>>;
+let fetchPortfolio: Mock<() => Promise<void>>;
 
 describe('Dashboard', () => {
   beforeEach(() => {
-    fetchDashboard = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-    usePortfolioStore.setState({ fetchDashboard });
+    fetchPortfolio = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+    usePortfolioStore.setState({ fetchPortfolio });
   });
 
   afterEach(() => {
@@ -46,19 +78,65 @@ describe('Dashboard', () => {
     expect(screen.getByTestId('top-movers')).toBeInTheDocument();
   });
 
-  it('loads the dashboard when the user is signed in', () => {
+  it('loads the portfolio when the user is signed in', () => {
     useUIStore.setState({ isAuthenticated: true });
 
     render(<Dashboard />);
 
-    expect(fetchDashboard).toHaveBeenCalledTimes(1);
+    expect(fetchPortfolio).toHaveBeenCalledTimes(1);
   });
 
-  it('does not load the dashboard when signed out', () => {
+  it('does not load the portfolio when signed out', () => {
     useUIStore.setState({ isAuthenticated: false });
 
     render(<Dashboard />);
 
-    expect(fetchDashboard).not.toHaveBeenCalled();
+    expect(fetchPortfolio).not.toHaveBeenCalled();
+  });
+
+  it('renders the KPI cards and holdings from the loaded portfolio', () => {
+    useUIStore.setState({ isAuthenticated: true });
+    usePortfolioStore.setState({
+      portfolio: {
+        cash: 100000,
+        holdings_value: 0,
+        total_equity: 100000,
+        unrealized_pnl: 0,
+        realized_pnl: 0,
+        positions: [],
+        top_movers: [],
+      },
+      portfolioStatus: 'ready',
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByRole('group', { name: 'Total equity' })).toHaveTextContent('100,000.00 SEK');
+    expect(screen.getByRole('group', { name: 'Cash' })).toHaveTextContent('100,000.00 SEK');
+    expect(screen.getByText('No positions yet')).toBeInTheDocument();
+    expect(screen.getByTestId('asset-chart')).toBeInTheDocument();
+  });
+
+  it('charts nothing (null) while there is no portfolio or no position', () => {
+    usePortfolioStore.setState({ portfolio: null, portfolioStatus: 'loading' });
+    const { unmount } = render(<Dashboard />);
+    expect(screen.getByTestId('asset-chart')).toHaveAttribute('data-orderbook-id', 'none');
+    unmount();
+
+    usePortfolioStore.setState({ portfolio: portfolioWith([]), portfolioStatus: 'ready' });
+    render(<Dashboard />);
+    expect(screen.getByTestId('asset-chart')).toHaveAttribute('data-orderbook-id', 'none');
+  });
+
+  it('charts the largest holding by market value', () => {
+    // Not sorted on purpose: the selector picks the largest, not the first.
+    usePortfolioStore.setState({
+      portfolio: portfolioWith([position('SIM-SMAL', 500), position('SIM-BIGG', 5000), position('SIM-MIDD', 1000)]),
+      portfolioStatus: 'ready',
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByTestId('asset-chart')).toHaveAttribute('data-orderbook-id', 'SIM-BIGG');
   });
 });

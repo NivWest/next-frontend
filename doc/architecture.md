@@ -68,8 +68,11 @@ src/
 │   ├── help/                   # Support center & knowledge base
 │   ├── markets/                # Market data: api/market.ts, types.ts (mirror backend api/openapi.yaml), candles.ts,
 │   │                           #   MarketSearch, InstrumentPage, PriceChart, SimulatedBadge
-│   ├── orders/                 # Order history & fill statuses
-│   ├── portfolio/              # Dashboard widgets (KPICards, AssetChart, HoldingsTable, TopMovers)
+│   ├── orders/                 # Order history: types.ts (OrderPage, mirrors backend api/openapi.yaml), api/orders.ts
+│   │                           #   (listOrders → GET /orders), format.ts, Orders (table "Order history", Load more)
+│   ├── portfolio/              # GET /portfolio: types.ts (Portfolio, PortfolioPosition), api/portfolio.ts (getPortfolio),
+│   │                           #   selectors.ts (largestHolding, pnlTone, …), Dashboard widgets (KPICards, AssetChart,
+│   │                           #   HoldingsTable, TopMovers)
 │   ├── settings/               # Profile & GDPR Right to Erasure
 │   ├── trading/                # Order execution: types.ts (mirrors backend api/openapi.yaml), preview.ts (previewOrder,
 │   │                           #   mirrors backend pricing), api/orders.ts (placeOrder, newIdempotencyKey), OrderTicket
@@ -81,7 +84,7 @@ src/
 │   ├── format.ts               # formatMoney ('100,000.00 SEK'), formatPercent ('+1.25%')
 │   └── routes.ts               # ROUTES and URL helpers (marketsSearchHref, instrumentHref, loginHref)
 └── store/                      # Cross-feature Zustand stores
-    ├── usePortfolioStore.ts    # Holdings and balance (watchlists: src/features/watchlist/store)
+    ├── usePortfolioStore.ts    # portfolio / portfolioStatus / fetchPortfolio (GET /api/v1/portfolio); watchlists: src/features/watchlist/store
     └── useUIStore.ts           # Auth session, toast notifications, cookie banner
 ```
 
@@ -98,13 +101,14 @@ src/
    - If unauthenticated on an `(app)` route, `AuthGuard` sends the visitor to `/login`, which offers a direct Google OAuth link to `/api/v1/auth/login` and the guest demo.
    - On 401/403 responses, `src/lib/api.ts` dispatches a window event `'auth-error'` to prompt re-authentication.
 3. **Data Integration:**
-   - `fetchDashboard()` loads portfolio total value, positions, and cash balance from `/api/v1/portfolio/dashboard`.
+   - `usePortfolioStore.fetchPortfolio()` (called by `Dashboard` when signed in) loads `GET /api/v1/portfolio` into `portfolio` (cash, total equity, unrealized/realized P&L, `positions` largest first, `top_movers`) and tracks `portfolioStatus` (`idle | loading | ready | error`; a failure keeps the last portfolio). `KPICards`, `HoldingsTable` and `TopMovers` only read the store.
+   - `Orders` (`/orders`) pages through `GET /api/v1/orders?limit=20&cursor=…` with `listOrders()`, following `next_cursor` on "Load more".
    - `OrderTicket` (on `InstrumentPage`) polls `/api/v1/market/instruments/{id}/quote` every 5 s, previews price, commission and total with `previewOrder()`, and submits through `placeOrder()`: `POST /api/v1/orders` with a fresh `Idempotency-Key` header per submit (a retry with the same key replays the original order). On success it calls `useUIStore.checkAuth()` so the profile balance (`Cash available`) updates; errors arrive as `ApiRequestError` and are mapped by `code`.
    - Market data goes through `src/features/markets/api/market.ts`; the backend serves either Avanza or the deterministic simulated market, selected by `MARKET_DATA_PROVIDER`.
    - `MarketSearch` searches `/api/v1/market/instruments?q=...`.
-   - Watchlists go through `src/features/watchlist/api/watchlists.ts` (`/api/v1/watchlists…`) into `useWatchlistStore`; the backend prices every item from the live quote. `TopMovers`, the `/watchlist` page and `AddToWatchlistMenu` all read that store.
+   - Watchlists go through `src/features/watchlist/api/watchlists.ts` (`/api/v1/watchlists…`) into `useWatchlistStore`; the backend prices every item from the live quote. The `/watchlist` page and `AddToWatchlistMenu` read that store.
    - `InstrumentPage` loads `/api/v1/market/instruments/{id}` (details + key indicators) and `/api/v1/market/instruments/{id}/quote`.
-   - `PriceChart` (used by `InstrumentPage` and `AssetChart`) fetches `/api/v1/market/instruments/{id}/candles?period=1d|1w|1m|3m|1y`. `AssetChart` charts `DEFAULT_CHART_INSTRUMENT` (`SIM-FJRD`) until NW-05.
+   - `PriceChart` (used by `InstrumentPage` and `AssetChart`) fetches `/api/v1/market/instruments/{id}/candles?period=1d|1w|1m|3m|1y`. `Dashboard` passes `AssetChart` the largest holding (`largestHolding(portfolio)?.orderbook_id ?? null`); with null it shows an empty state and fetches nothing.
 
 ---
 

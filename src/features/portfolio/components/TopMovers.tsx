@@ -1,70 +1,74 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
-import { useUIStore } from '@/store/useUIStore';
-import { useWatchlistStore } from '@/features/watchlist/store/useWatchlistStore';
-import { topMovers } from '@/features/watchlist/watchlist';
+import type { ReactNode } from 'react';
+import { pnlTone, type PnlTone } from '@/features/portfolio/selectors';
+import type { PortfolioPosition } from '@/features/portfolio/types';
 import { formatMoney, formatPercent } from '@/lib/format';
 import { instrumentHref } from '@/lib/routes';
+import { usePortfolioStore } from '@/store/usePortfolioStore';
 
-/** Rows shown at most; the widget only has room for a few. */
-const MAX_MOVERS = 5;
+const TONE_CLASS: Record<PnlTone, string> = {
+  positive: 'text-green-500',
+  negative: 'text-red-500',
+  neutral: 'text-[#a1a1aa]',
+};
 
-/**
- * Dashboard widget: the watchlist instruments with the biggest day change, across all of the user's lists.
- * Prices come with the lists from GET /watchlists (story NW-06), so nothing is looked up by ticker.
- */
+function MoverRow({ position }: { position: PortfolioPosition }) {
+  return (
+    <li className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <Link
+          href={instrumentHref(position.orderbook_id)}
+          className="block truncate text-sm font-medium text-white hover:underline"
+        >
+          {position.name}
+        </Link>
+        <div className="text-xs text-[#a1a1aa]">{position.symbol}</div>
+      </div>
+      <div className="text-right shrink-0 tabular-nums">
+        <div className="text-sm font-medium text-white">{formatMoney(position.last_price)}</div>
+        <div className={`text-xs ${TONE_CLASS[pnlTone(position.day_change_percent)]}`}>
+          {formatPercent(position.day_change_percent)}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** The portfolio's biggest movers today: `Portfolio.top_movers`, already sorted by day change (desc). */
 export function TopMovers() {
-  const { isAuthenticated } = useUIStore();
-  const { watchlists, status, fetchWatchlists } = useWatchlistStore();
+  const portfolio = usePortfolioStore((state) => state.portfolio);
+  const status = usePortfolioStore((state) => state.portfolioStatus);
 
-  useEffect(() => {
-    if (isAuthenticated) void fetchWatchlists();
-  }, [isAuthenticated, fetchWatchlists]);
-
-  const movers = topMovers(watchlists, MAX_MOVERS);
-  const loading = (status === 'idle' || status === 'loading') && watchlists.length === 0;
+  let body: ReactNode;
+  if (!portfolio) {
+    body =
+      status === 'error' ? (
+        <p role="alert" className="text-center text-[#a1a1aa] mt-8 text-sm">
+          Could not load your movers. Try again later.
+        </p>
+      ) : (
+        <p role="status" className="text-center text-[#a1a1aa] mt-8 text-sm">
+          Loading movers…
+        </p>
+      );
+  } else if (portfolio.top_movers.length === 0) {
+    body = <p className="text-center text-[#a1a1aa] mt-8 text-sm">Movers appear once you hold positions.</p>;
+  } else {
+    body = (
+      <ul className="space-y-4" aria-label="Top movers">
+        {portfolio.top_movers.map((position) => (
+          <MoverRow key={position.orderbook_id} position={position} />
+        ))}
+      </ul>
+    );
+  }
 
   return (
-    <div className="bg-[#0a0a0a] border border-[#27272a] rounded-xl p-5 shadow-sm h-full overflow-y-auto scrollbar-hide">
-      <h3 className="text-sm font-medium text-white mb-4">Top movers (Watchlist)</h3>
-
-      {!isAuthenticated ? (
-        <div className="text-center text-[#a1a1aa] mt-8 text-sm">
-          Sign in to see watchlist movers.
-        </div>
-      ) : loading ? (
-        <div className="flex justify-center mt-8 text-[#a1a1aa]">
-          <Loader2 className="w-5 h-5 animate-spin" aria-label="Loading movers" />
-        </div>
-      ) : movers.length === 0 ? (
-        <div className="text-center text-[#a1a1aa] mt-8 text-sm">
-          Your watchlist is empty.
-        </div>
-      ) : (
-        <ul className="space-y-4" aria-label="Watchlist movers">
-          {movers.map((mover) => (
-            <li key={mover.orderbook_id} className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 bg-zinc-800 rounded flex items-center justify-center">
-                  <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
-                </div>
-                <Link href={instrumentHref(mover.orderbook_id)} className="text-sm font-medium text-white hover:underline">
-                  {mover.symbol || mover.orderbook_id}
-                </Link>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-medium text-white">{formatMoney(mover.last_price ?? 0)}</div>
-                <div className={`text-xs ${(mover.change_percent ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  {formatPercent(mover.change_percent ?? 0)}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <section className="bg-[#0a0a0a] border border-[#27272a] rounded-xl p-5 shadow-sm h-full overflow-y-auto scrollbar-hide">
+      <h2 className="text-sm font-medium text-white mb-4">Top movers</h2>
+      {body}
+    </section>
   );
 }

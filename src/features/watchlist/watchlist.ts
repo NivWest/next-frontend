@@ -1,8 +1,7 @@
 import { ApiRequestError } from '@/lib/api';
-import { MAX_WATCHLISTS, MAX_WATCHLIST_NAME_LENGTH, type Watchlist, type WatchlistErrorCode, type WatchlistItem } from './types';
+import { MAX_WATCHLISTS, MAX_WATCHLIST_NAME_LENGTH, type WatchlistErrorCode } from './types';
 
-// Pure watchlist helpers (story NW-06): name validation that mirrors the backend, error texts by `code`,
-// and the dashboard's movers.
+// Pure watchlist helpers (story NW-06): name validation that mirrors the backend and error texts by `code`.
 
 /**
  * Mirrors the backend rule (trimmed, 1–50 characters). Returns the message to show, or null when the name is valid.
@@ -40,20 +39,4 @@ export function watchlistErrorMessage(error: unknown): string {
 /** True when the request failed because the instrument is already on the list (409 CONFLICT). */
 export function isDuplicateItemError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.code === 'CONFLICT';
-}
-
-/**
- * Items across all lists that have a price, each instrument once, biggest day change first, at most `limit`.
- */
-export function topMovers(lists: readonly Watchlist[], limit: number): WatchlistItem[] {
-  const seen = new Set<string>();
-  const priced: WatchlistItem[] = [];
-  for (const list of lists) {
-    for (const item of list.items) {
-      if (seen.has(item.orderbook_id) || item.last_price === null || item.change_percent === null) continue;
-      seen.add(item.orderbook_id);
-      priced.push(item);
-    }
-  }
-  return priced.sort((a, b) => (b.change_percent ?? 0) - (a.change_percent ?? 0)).slice(0, limit);
 }

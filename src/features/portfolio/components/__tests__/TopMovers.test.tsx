@@ -1,109 +1,108 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Mock } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TopMovers } from '../TopMovers';
-import { useWatchlistStore } from '@/features/watchlist/store/useWatchlistStore';
-import type { Watchlist, WatchlistItem } from '@/features/watchlist/types';
-import { useUIStore } from '@/store/useUIStore';
+import type { Portfolio, PortfolioPosition } from '@/features/portfolio/types';
+import { usePortfolioStore } from '@/store/usePortfolioStore';
 
-const initialWatchlists = useWatchlistStore.getState();
-const initialUI = useUIStore.getState();
+const initialPortfolio = usePortfolioStore.getState();
 
-function item(overrides: Partial<WatchlistItem>): WatchlistItem {
+function position(overrides: Partial<PortfolioPosition>): PortfolioPosition {
   return {
     orderbook_id: 'SIM-XXXX',
     symbol: 'XXXX',
     name: 'Example AB',
+    quantity: 10,
+    avg_cost: 100,
     last_price: 100,
-    change_percent: 0,
-    added_at: '2026-11-08T09:00:00Z',
+    market_value: 1000,
+    unrealized_pnl: 0,
+    unrealized_pnl_percent: 0,
+    day_change_percent: 0,
+    weight: 100,
     ...overrides,
   };
 }
 
-function list(id: number, items: WatchlistItem[]): Watchlist {
-  return { id, name: `List ${id}`, items, created_at: '2026-11-08T09:00:00Z' };
+function portfolio(topMovers: PortfolioPosition[]): Portfolio {
+  return {
+    cash: 100000,
+    holdings_value: 0,
+    total_equity: 100000,
+    unrealized_pnl: 0,
+    realized_pnl: 0,
+    positions: topMovers,
+    top_movers: topMovers,
+  };
 }
 
-let fetchWatchlists: Mock<() => Promise<void>>;
-
 describe('TopMovers', () => {
-  beforeEach(() => {
-    fetchWatchlists = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-    useWatchlistStore.setState({ fetchWatchlists });
-  });
-
   afterEach(() => {
-    // Unmount first: restoring the real store actions would otherwise re-run the components' effects.
-    cleanup();
-    useWatchlistStore.setState(initialWatchlists, true);
-    useUIStore.setState(initialUI, true);
+    usePortfolioStore.setState(initialPortfolio, true);
   });
 
-  it('asks signed-out visitors to sign in and fetches nothing', () => {
-    useUIStore.setState({ isAuthenticated: false });
+  it('shows a loading status before the portfolio arrives', () => {
+    usePortfolioStore.setState({ portfolio: null, portfolioStatus: 'loading' });
 
     render(<TopMovers />);
 
-    expect(screen.getByText('Sign in to see watchlist movers.')).toBeInTheDocument();
-    expect(fetchWatchlists).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Top movers' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.queryByRole('list')).toBeNull();
   });
 
-  it('loads the watchlists when signed in and shows a spinner meanwhile', () => {
-    useUIStore.setState({ isAuthenticated: true });
-    useWatchlistStore.setState({ status: 'loading', watchlists: [] });
+  it('shows an alert when the first load fails', () => {
+    usePortfolioStore.setState({ portfolio: null, portfolioStatus: 'error' });
 
     render(<TopMovers />);
 
-    expect(fetchWatchlists).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText('Loading movers')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('shows the empty-watchlist state when no list has a priced item', () => {
-    useUIStore.setState({ isAuthenticated: true });
-    useWatchlistStore.setState({ status: 'ready', watchlists: [list(1, []), list(2, [item({ last_price: null, change_percent: null })])] });
+  it('shows its own empty text, never the holdings table one, without positions', () => {
+    usePortfolioStore.setState({ portfolio: portfolio([]), portfolioStatus: 'ready' });
 
     render(<TopMovers />);
 
-    expect(screen.getByText('Your watchlist is empty.')).toBeInTheDocument();
+    expect(screen.getByText('Movers appear once you hold positions.')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('No positions yet');
+    expect(screen.queryByRole('list')).toBeNull();
   });
 
-  it('lists each instrument once across lists, biggest change first, with formatted price and percent', () => {
-    useUIStore.setState({ isAuthenticated: true });
-    useWatchlistStore.setState({
-      status: 'ready',
-      watchlists: [
-        list(1, [
-          item({ orderbook_id: 'SIM-NVE', symbol: 'NVE', last_price: 100, change_percent: -0.5 }),
-          item({ orderbook_id: 'SIM-FJRD', symbol: 'FJRD', last_price: 100000, change_percent: 1.25 }),
-        ]),
-        list(2, [
-          item({ orderbook_id: 'SIM-NVE', symbol: 'NVE', last_price: 100, change_percent: -0.5 }),
-          item({ orderbook_id: 'SIM-BALT', symbol: 'BALT', last_price: 42.5, change_percent: 3 }),
-        ]),
-      ],
+  it('lists top_movers in order with instrument links, price and coloured day change', () => {
+    const movers = [
+      position({ orderbook_id: 'SIM-NVE', symbol: 'NVE', name: 'Nordvik Energy', last_price: 110, day_change_percent: 3 }),
+      position({ orderbook_id: 'SIM-FJRD', symbol: 'FJRD', name: 'Fjord AB', last_price: 1234.5, day_change_percent: 0 }),
+      position({ orderbook_id: 'SIM-MALM', symbol: 'MALM', name: 'Malm Mining', last_price: 42.5, day_change_percent: -1.25 }),
+    ];
+    usePortfolioStore.setState({ portfolio: portfolio(movers), portfolioStatus: 'ready' });
+
+    render(<TopMovers />);
+
+    const list = screen.getByRole('list', { name: 'Top movers' });
+    const rows = within(list).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Nordvik EnergyNVE110.00 SEK+3.00%',
+      'Fjord ABFJRD1,234.50 SEK0.00%',
+      'Malm MiningMALM42.50 SEK-1.25%',
+    ]);
+    expect(within(list).getByRole('link', { name: 'Nordvik Energy' })).toHaveAttribute('href', '/markets/SIM-NVE');
+    expect(within(list).getByRole('link', { name: 'Malm Mining' })).toHaveAttribute('href', '/markets/SIM-MALM');
+    expect(within(rows[0]).getByText('+3.00%')).toHaveClass('text-green-500');
+    expect(within(rows[1]).getByText('0.00%')).toHaveClass('text-[#a1a1aa]');
+    expect(within(rows[2]).getByText('-1.25%')).toHaveClass('text-red-500');
+    expect(document.body.textContent).not.toContain('$');
+  });
+
+  it('keeps showing the last movers while a refresh is loading', () => {
+    usePortfolioStore.setState({
+      portfolio: portfolio([position({ name: 'Nordvik Energy' })]),
+      portfolioStatus: 'loading',
     });
 
     render(<TopMovers />);
 
-    const rows = within(screen.getByRole('list', { name: 'Watchlist movers' })).getAllByRole('listitem');
-    expect(rows.map((row) => row.textContent)).toEqual([
-      'BALT42.50 SEK+3.00%',
-      'FJRD100,000.00 SEK+1.25%',
-      'NVE100.00 SEK-0.50%',
-    ]);
-    expect(screen.getByRole('link', { name: 'BALT' })).toHaveAttribute('href', '/markets/SIM-BALT');
-  });
-
-  it('shows at most five movers', () => {
-    useUIStore.setState({ isAuthenticated: true });
-    const items = Array.from({ length: 7 }, (_, i) => item({ orderbook_id: `SIM-${i}`, symbol: `S${i}`, change_percent: i }));
-    useWatchlistStore.setState({ status: 'ready', watchlists: [list(1, items)] });
-
-    render(<TopMovers />);
-
-    const rows = within(screen.getByRole('list', { name: 'Watchlist movers' })).getAllByRole('listitem');
-    expect(rows).toHaveLength(5);
-    expect(rows[0]).toHaveTextContent('S6');
+    expect(screen.getByRole('list', { name: 'Top movers' })).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError } from '@/lib/api';
-import type { Watchlist, WatchlistItem } from '../types';
-import { isDuplicateItemError, topMovers, validateWatchlistName, watchlistErrorMessage } from '../watchlist';
+import { isDuplicateItemError, validateWatchlistName, watchlistErrorMessage } from '../watchlist';
 
 describe('validateWatchlistName', () => {
   it.each([
@@ -45,27 +44,5 @@ describe('isDuplicateItemError', () => {
     expect(isDuplicateItemError(new ApiRequestError('dup', 409, 'CONFLICT'))).toBe(true);
     expect(isDuplicateItemError(new ApiRequestError('nf', 404, 'INSTRUMENT_NOT_FOUND'))).toBe(false);
     expect(isDuplicateItemError(new Error('x'))).toBe(false);
-  });
-});
-
-describe('topMovers', () => {
-  const item = (id: string, change: number | null, price: number | null = 10): WatchlistItem => ({
-    orderbook_id: id,
-    symbol: id,
-    name: id,
-    last_price: price,
-    change_percent: change,
-    added_at: '2026-11-08T09:00:00Z',
-  });
-  const list = (id: number, items: WatchlistItem[]): Watchlist => ({ id, name: `L${id}`, items, created_at: '' });
-
-  it('dedupes across lists, skips unpriced items, sorts by change and limits', () => {
-    const lists = [list(1, [item('A', 1), item('B', 5), item('C', null)]), list(2, [item('A', 1), item('D', -2), item('E', 3, null)])];
-    expect(topMovers(lists, 2).map((i) => i.orderbook_id)).toEqual(['B', 'A']);
-    expect(topMovers(lists, 10).map((i) => i.orderbook_id)).toEqual(['B', 'A', 'D']);
-  });
-
-  it('returns [] for no lists', () => {
-    expect(topMovers([], 5)).toEqual([]);
   });
 });
