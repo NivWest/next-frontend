@@ -137,6 +137,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the signed-in user's profile
+         * @description Updates the user's pseudonymous display name and/or leaderboard opt-in status (story NW-13).
+         *     Display name must be 3–20 characters [A-Za-z0-9_-] and unique (case-insensitive).
+         */
+        patch: operations["updateProfile"];
+        trace?: never;
+    };
     "/admin/users/{id}": {
         parameters: {
             query?: never;
@@ -222,6 +243,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live quotes over Server-Sent Events
+         * @description Streams live quotes for up to 50 instruments as `text/event-stream`. Every request parameter is validated and
+         *     every id is resolved **before** the stream starts, so a bad request gets a normal JSON error instead.
+         *
+         *     Events (each `data` line is one JSON document):
+         *
+         *     - `event: quote`: `data` is a `Quote` (same schema as `GET /market/instruments/{orderbook_id}/quote`). On
+         *       connect the stream sends the current quote of every requested id at once; afterwards it sends a quote only
+         *       when it changed (last, bid, ask or change_percent). The server polls the provider once per instrument every
+         *       `MARKET_STREAM_INTERVAL` (backend default 2s, compose 1s), shared by all streams watching it.
+         *     - `event: error`: `data` is an `Error`. Sent just before the server ends the stream (e.g. on shutdown); the
+         *       client should reconnect.
+         *     - `: ping` comment lines every `MARKET_STREAM_HEARTBEAT` (default 10s) keep idle connections open.
+         *
+         *     The first message is `retry: 3000` (EventSource reconnect delay in ms). Responses carry
+         *     `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` so proxies don't buffer them.
+         *     Connecting counts as one request against the shared per-IP `/market` rate limit, and an IP can hold at most
+         *     `MARKET_STREAM_MAX_PER_IP` (default 5) streams at the same time. A slow client never blocks others: per
+         *     instrument it only keeps the latest undelivered quote.
+         */
+        get: operations["streamQuotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sim/instruments/{orderbook_id}/price": {
         parameters: {
             query?: never;
@@ -260,10 +318,13 @@ export interface paths {
         get: operations["listOrders"];
         put?: never;
         /**
-         * Place a market order and execute it
-         * @description Validates the request, prices it from the live quote (see the Order schema) and, in one DB transaction,
-         *     locks the user row, checks cash or shares, moves the cash, updates the position and stores the order.
-         *     Concurrent orders by the same user are serialized, so cash never goes negative.
+         * Place an order
+         * @description A MARKET order is priced from the live quote (see the Order schema) and, in one DB transaction, the user row
+         *     is locked, buying power or available shares are checked, the cash moves, the position is updated and the
+         *     order is stored FILLED (201). Concurrent orders by the same user are serialized, so cash never goes negative.
+         *
+         *     A LIMIT or STOP order is stored OPEN (201) after its reservation (see OrderRequest) is checked against buying
+         *     power or available shares and booked in the same kind of transaction; the matching engine fills it later.
          *
          *     With an `Idempotency-Key` header, a retry with the same key and the same body returns the original order
          *     (200, identical body) and executes nothing; the same key with a different body is 409 CONFLICT.
@@ -271,6 +332,34 @@ export interface paths {
          */
         post: operations["placeOrder"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * One of the signed-in user's orders
+         * @description Use it to poll an OPEN order until the matching engine fills or rejects it.
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        /**
+         * Cancel an OPEN order
+         * @description In one transaction (user, position and order rows locked, in that order) the order moves from OPEN to
+         *     CANCELLED and its reservation is released. A fill and a cancel racing for the same order serialize on these
+         *     locks: whichever commits first wins, and the other sees the order is no longer OPEN.
+         */
+        delete: operations["cancelOrder"];
         options?: never;
         head?: never;
         patch?: never;
@@ -550,6 +639,191 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The signed-in user's vault balance, APY, interest earned, and idle cash projection
+         * @description Returns the user's vault status. Interest compounds daily and is accrued lazily on every read or mutation:
+         *     balance × (1 + APY)^(elapsed_days/365).
+         */
+        get: operations["getVault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/deposits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deposit uninvested cash into the vault
+         * @description Transfers cash from buying power into the vault. Accrues pending interest first.
+         */
+        post: operations["depositVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/withdrawals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw cash from the vault back to cash balance
+         * @description Transfers cash from the vault back to uninvested cash. Accrues pending interest first.
+         */
+        post: operations["withdrawVault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vault/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the signed-in user's vault transactions
+         * @description Lists the user's deposits and withdrawals newest first.
+         */
+        get: operations["listVaultTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public leaderboard ranked by return or Sharpe ratio
+         * @description Materialized rankings refreshed every LEADERBOARD_REFRESH (story NW-13).
+         *     metric=return ranks all opted-in users by total_return_pct.
+         *     metric=sharpe ranks only users with sufficient data by sharpe_ratio.
+         *     Ties are broken by earlier opted_in_at.
+         */
+        get: operations["getLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask a question answered by the knowledge base with citations
+         * @description Answers a trading question using retrieval-augmented generation over TradeEdu knowledge base articles.
+         *     If no relevant chunks are found, returns an abstain answer without calling the LLM.
+         */
+        post: operations["askKnowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learn/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all knowledge base articles
+         * @description Returns summaries and tags of all knowledge base articles. Public and unauthenticated.
+         */
+        get: operations["listArticles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learn/articles/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one article by slug
+         * @description Returns the full article including markdown body and update timestamp.
+         */
+        get: operations["getArticle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learn/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search knowledge base articles using full-text search
+         * @description Performs full-text search across article chunks with ranking and headline snippets.
+         */
+        get: operations["searchArticles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -559,7 +833,7 @@ export interface components {
          *     else (enforced by `internal/handlers/openapi_parity_test.go`).
          * @enum {string}
          */
-        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "ORDER_NOT_FOUND" | "AI_BUDGET_EXCEEDED" | "AI_REFUSED" | "AI_UNAVAILABLE";
+        ErrorCode: "VALIDATION_ERROR" | "UNAUTHENTICATED" | "FORBIDDEN" | "USER_NOT_FOUND" | "RATE_LIMITED" | "INTERNAL_ERROR" | "INSTRUMENT_NOT_FOUND" | "MARKET_DATA_UNAVAILABLE" | "INSUFFICIENT_FUNDS" | "INSUFFICIENT_SHARES" | "CONFLICT" | "WATCHLIST_NOT_FOUND" | "WATCHLIST_ITEM_NOT_FOUND" | "WATCHLIST_LIMIT_REACHED" | "ARTICLE_NOT_FOUND" | "AI_BUDGET_EXCEEDED" | "AI_REFUSED" | "AI_UNAVAILABLE" | "ORDER_NOT_FOUND" | "ORDER_NOT_OPEN" | "INSUFFICIENT_VAULT_BALANCE";
         /** @description The body of every error response. */
         Error: {
             /** @description Human-readable message. */
@@ -583,6 +857,13 @@ export interface components {
             balance: number;
             /** @description True when role is guest. */
             is_guest: boolean;
+            /**
+             * @description Pseudonymous handle for the leaderboard.
+             * @example bull_42
+             */
+            display_name?: string | null;
+            /** @description True when opted in to the public leaderboard. */
+            leaderboard_opt_in: boolean;
         };
         /** @description Optional switches that are enabled on this deployment. */
         Features: {
@@ -722,15 +1003,36 @@ export interface components {
          */
         OrderSide: "BUY" | "SELL";
         /**
-         * @description Only market orders until NW-08.
+         * @description MARKET executes immediately. LIMIT and STOP are good-till-cancelled pending orders (story NW-08): they start
+         *     OPEN and the matching engine fills them once the quote reaches their price (see OrderRequest).
          * @enum {string}
          */
-        OrderType: "MARKET";
+        OrderType: "MARKET" | "LIMIT" | "STOP";
         /**
-         * @description Market orders are always FILLED; the other states are reserved for pending orders (NW-08).
+         * @description Market orders are always FILLED. A LIMIT or STOP order starts OPEN and moves exactly once, to FILLED (the
+         *     matching engine), CANCELLED (DELETE /orders/{id}) or REJECTED (not enough buying power at fill time).
          * @enum {string}
          */
         OrderStatus: "OPEN" | "FILLED" | "CANCELLED" | "REJECTED";
+        /**
+         * @description A market order executes at once. LIMIT and STOP orders are good-till-cancelled and start OPEN.
+         *
+         *     Reservations at placement (money rounded half-up to 2 decimals; commission = max(1.00, 0.25% × gross)):
+         *     - BUY LIMIT reserves quantity × limit_price + commission(quantity × limit_price);
+         *     - BUY STOP reserves the same with round2(stop_price × 1.05) in place of limit_price;
+         *     - SELL orders reserve the shares.
+         *     buying_power = cash − reserved_cash and available shares = quantity − reserved_quantity; every order,
+         *     market orders included, must fit them (422 INSUFFICIENT_FUNDS / INSUFFICIENT_SHARES otherwise).
+         *
+         *     The matching engine checks open orders about once a second and fills them with the market pricing rules
+         *     (see Order) when:
+         *     - BUY LIMIT: ask ≤ limit_price (fills at the ask);
+         *     - SELL LIMIT: bid ≥ limit_price (fills at the bid);
+         *     - SELL STOP: bid ≤ stop_price (fills at the bid);
+         *     - BUY STOP: ask ≥ stop_price (fills at the ask).
+         *     When the cash outside other reservations no longer covers the total at fill time, the order is REJECTED
+         *     with a reject_reason and its reservation is released.
+         */
         OrderRequest: {
             /** @example SIM-FJRD */
             orderbook_id: string;
@@ -742,17 +1044,28 @@ export interface components {
             quantity: number;
             /** @description Defaults to MARKET. */
             type?: components["schemas"]["OrderType"];
+            /**
+             * @description Required for (and only allowed on) LIMIT orders. SEK, at most 2 decimals.
+             * @example 95
+             */
+            limit_price?: number;
+            /**
+             * @description Required for (and only allowed on) STOP orders. SEK, at most 2 decimals.
+             * @example 90
+             */
+            stop_price?: number;
             /** @description Optional trade thesis / note (≤ 500 characters). */
             note?: string;
         };
         /**
-         * @description An executed order. Pricing (all money in SEK, rounded half-up to 2 decimals):
+         * @description An order and, once FILLED, its fill. Pricing (all money in SEK, rounded half-up to 2 decimals):
          *     - base price = ask for BUY, bid for SELL;
          *     - quantity > 100 applies 0.5% slippage against the trader (BUY × 1.005, SELL × 0.995);
          *     - fill_price = base price (after slippage) rounded to 2 decimals, before anything else;
          *     - gross = fill_price × quantity; commission = max(1.00, 0.25% × gross);
          *     - total = gross + commission (BUY, debited) or gross − commission (SELL, credited).
-         *     Execution waits a simulated 50–500 ms before the price is read.
+         *     A market order waits a simulated 50–500 ms before the price is read. fill_price, commission and total are
+         *     null unless status is FILLED.
          */
         Order: {
             /** Format: int64 */
@@ -765,14 +1078,20 @@ export interface components {
             status: components["schemas"]["OrderStatus"];
             /** @description Up to 4 decimals. */
             quantity: number;
-            /** @description Price per share in SEK, 2 decimals. */
-            fill_price: number;
-            /** @description SEK, 2 decimals. */
-            commission: number;
-            /** @description Cash debited (BUY) or credited (SELL) in SEK, 2 decimals. */
-            total: number;
+            /** @description The LIMIT order's price in SEK (2 decimals); null for other types. */
+            limit_price: number | null;
+            /** @description The STOP order's trigger price in SEK (2 decimals); null for other types. */
+            stop_price: number | null;
+            /** @description Price per share in SEK, 2 decimals. null unless FILLED. */
+            fill_price: number | null;
+            /** @description SEK, 2 decimals. null unless FILLED. */
+            commission: number | null;
+            /** @description Cash debited (BUY) or credited (SELL) in SEK, 2 decimals. null unless FILLED. */
+            total: number | null;
             /** @description Trade thesis / note (empty string when none was given). */
-            note?: string;
+            note: string;
+            /** @description Why the matching engine rejected the order; null unless REJECTED. */
+            reject_reason: string | null;
             /** Format: date-time */
             created_at: string;
             /**
@@ -878,19 +1197,27 @@ export interface components {
             day_change_percent: number;
             /** @description Percent of holdings_value, 2 decimals. */
             weight: number;
+            /** @description Shares held back by OPEN SELL orders (up to 4 decimals); quantity − reserved_quantity can be sold. */
+            reserved_quantity: number;
         };
         /**
          * @description The signed-in user's portfolio. Money in SEK, 2 decimals.
-         *     - holdings_value = Σ positions.market_value; total_equity = cash + holdings_value;
+         *     - holdings_value = Σ positions.market_value; total_equity = cash + holdings_value + vault_value;
          *     - unrealized_pnl = Σ positions.unrealized_pnl;
-         *     - realized_pnl accumulates over every SELL: sell total (net proceeds) − avg_cost × quantity sold.
+         *     - realized_pnl accumulates over every SELL: sell total (net proceeds) − avg_cost × quantity sold;
+         *     - reserved_cash = Σ reservations of OPEN BUY orders (still part of cash); buying_power = cash − reserved_cash;
+         *     - vault_value is the balance currently in The Vault (story NW-11).
          *     positions are sorted by market_value desc (largest holding first), then orderbook_id asc.
          *     top_movers is at most 5 positions sorted by day_change_percent desc, then orderbook_id asc.
          *     Both arrays are empty (never null) without positions.
          */
         Portfolio: {
             cash: number;
+            reserved_cash: number;
+            buying_power: number;
             holdings_value: number;
+            /** @description Balance currently in the vault (story NW-11). */
+            vault_value: number;
             total_equity: number;
             unrealized_pnl: number;
             realized_pnl: number;
@@ -901,7 +1228,7 @@ export interface components {
          * @description An AI feature that calls the LLM gateway. Each one has its own versioned prompt.
          * @enum {string}
          */
-        AIFeature: "instrument_brief" | "insights_review";
+        AIFeature: "instrument_brief" | "insights_review" | "knowledge_ask";
         /** @description One number of the instrument, in plain language. */
         BriefMetric: {
             /** @example P/E ratio */
@@ -1103,6 +1430,142 @@ export interface components {
             items: components["schemas"]["InsightsReview"][];
             next_cursor: string | null;
         };
+        /** @description The signed-in user's vault status and risk-free yield. */
+        Vault: {
+            /** @description Current balance in the vault in SEK, 2 decimals. */
+            balance: number;
+            /** @description Annual percentage yield as a fraction (e.g. 0.051). */
+            apy: number;
+            /** @description Total accrued interest earned in SEK, 2 decimals. */
+            interest_earned_total: number;
+            /** @description Projected 30-day interest on uninvested cash (idle cash × APY × 30 / 365) in SEK, 2 decimals. */
+            projected_monthly_interest_on_idle_cash: number;
+        };
+        VaultTransferRequest: {
+            /** @description Amount in SEK, positive, at most 2 decimal places. */
+            amount: number;
+        };
+        VaultTransaction: {
+            id: number;
+            /** @enum {string} */
+            type: "DEPOSIT" | "WITHDRAWAL";
+            /** @description Amount in SEK, 2 decimals. */
+            amount: number;
+            /**
+             * Format: date-time
+             * @description RFC 3339 UTC.
+             */
+            created_at: string;
+        };
+        VaultTransactionListResponse: {
+            /** @description Vault transactions, newest first. */
+            items: components["schemas"]["VaultTransaction"][];
+            /** @description Kept for list pagination convention; always null for now. */
+            next_cursor: string | null;
+        };
+        /** @description Fields to update on the user profile (story NW-13). */
+        UpdateProfileRequest: {
+            /**
+             * @description Unique pseudonymous handle, 3–20 characters [A-Za-z0-9_-].
+             * @example bull_42
+             */
+            display_name?: string;
+            /** @description Whether to appear on public leaderboards. */
+            leaderboard_opt_in?: boolean;
+        };
+        /**
+         * @description Ranking metric for the leaderboard.
+         * @enum {string}
+         */
+        LeaderboardMetric: "return" | "sharpe";
+        /** @description One ranked leaderboard entry (story NW-13). Exposes no internal ID, email or balance. */
+        LeaderboardEntry: {
+            /** @description Rank (1-based). Ties broken by earlier opted_in_at. */
+            rank: number;
+            /** @description Unique pseudonymous handle. */
+            display_name: string;
+            /** @description Total return in percent, 2 decimals. */
+            total_return_pct: number;
+            /** @description Annualized Sharpe ratio, 2 decimals (null if insufficient data). */
+            sharpe_ratio: number | null;
+            /** @description Maximum drawdown in percent, 2 decimals (null if insufficient data). */
+            max_drawdown_pct: number | null;
+            /** @description True when this entry belongs to the caller. */
+            is_me: boolean;
+        };
+        /** @description A page of ranked leaderboard entries. */
+        LeaderboardPage: {
+            /** @description Leaderboard entries ordered by rank. The caller's own entry is appended if outside the page. */
+            items: components["schemas"]["LeaderboardEntry"][];
+        };
+        /** @description Summary of a knowledge base article (story NW-15). */
+        ArticleSummary: {
+            /** @example slippage */
+            slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            title: string;
+            /** @example How execution latency and volume affect order fill prices. */
+            summary: string;
+            /**
+             * @example [
+             *       "execution",
+             *       "risk"
+             *     ]
+             */
+            tags: string[];
+        };
+        ArticleListResponse: {
+            items: components["schemas"]["ArticleSummary"][];
+        };
+        /** @description Full knowledge base article with markdown content (story NW-15). */
+        Article: {
+            /** @example slippage */
+            slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            title: string;
+            /** @example How execution latency and volume affect order fill prices. */
+            summary: string;
+            tags: string[];
+            body_markdown: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description One search result chunk from the knowledge base (story NW-15). */
+        ArticleSearchResult: {
+            /** @example slippage */
+            slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            title: string;
+            /** @example slippage-what-is-slippage */
+            chunk_id: string;
+            /** @example <b>Slippage</b> is the difference between expected and executed price... */
+            snippet: string;
+        };
+        ArticleSearchResponse: {
+            items: components["schemas"]["ArticleSearchResult"][];
+        };
+        AskRequest: {
+            /** @example What is slippage? */
+            question: string;
+        };
+        Citation: {
+            /** @example slippage */
+            article_slug: string;
+            /** @example Slippage: Why Orders Fill Off-Price */
+            article_title: string;
+            /** @example slippage-what-is-slippage */
+            chunk_id: string;
+            /** @example Slippage is the difference between the expected price and executed price. */
+            quoted_text: string;
+        };
+        AskResponse: {
+            answer: string;
+            citations: components["schemas"]["Citation"][];
+            /** @example fake */
+            model: string;
+            /** @enum {string} */
+            disclaimer: "AI-generated · educational, not financial advice";
+        };
     };
     responses: {
         /** @description Missing, unknown or expired session. */
@@ -1210,21 +1673,6 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description No order with this id belongs to the signed-in user (another user's order is reported the same way). */
-        OrderNotFound: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "error": "order not found",
-                 *       "code": "ORDER_NOT_FOUND"
-                 *     }
-                 */
-                "application/json": components["schemas"]["Error"];
-            };
-        };
         /** @description Malformed JSON, a non-numeric list id, or a name that is blank or longer than 50 characters after trimming. */
         WatchlistValidationError: {
             headers: {
@@ -1285,8 +1733,54 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description No order with this id belongs to the signed-in user (another user's order is reported the same way). */
+        OrderNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "order not found",
+                 *       "code": "ORDER_NOT_FOUND"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The order id is not a positive integer. */
+        OrderIDValidationError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "order id must be a positive integer",
+                 *       "code": "VALIDATION_ERROR"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description No article exists for the requested slug (story NW-15). */
+        ArticleNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": "article not found",
+                 *       "code": "ARTICLE_NOT_FOUND"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
+        ArticleSlug: string;
         OrderbookID: string;
         WatchlistID: number;
         OrderID: number;
@@ -1541,6 +2035,47 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
         };
     };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            /** @description Display name already taken (case-insensitive). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "display name already taken",
+                     *       "code": "CONFLICT"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     deleteUser: {
         parameters: {
             query?: never;
@@ -1728,6 +2263,73 @@ export interface operations {
             502: components["responses"]["MarketDataUnavailable"];
         };
     };
+    streamQuotes: {
+        parameters: {
+            query: {
+                /**
+                 * @description Comma-separated orderbook ids, 1 to 50 entries. Entries are trimmed, blank entries are ignored and
+                 *     duplicates are streamed once.
+                 * @example SIM-FJRD,SIM-NVE
+                 */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event stream. It stays open until the client disconnects or the server shuts down. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example retry: 3000
+                     *
+                     *     event: quote
+                     *     data: {"orderbook_id":"SIM-FJRD","symbol":"FJRD","last":123.45,"bid":123.33,"ask":123.57,"change_percent":1.25,"currency":"SEK","updated_at":"2026-11-08T09:41:00Z"}
+                     *
+                     *     : ping
+                     */
+                    "text/event-stream": string;
+                };
+            };
+            /** @description `ids` is missing, has no non-blank entry, or has more than 50 entries. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "ids must list at most 50 orderbook ids",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["InstrumentNotFound"];
+            /** @description Over the per-IP `/market` rate limit, or this IP already holds `MARKET_STREAM_MAX_PER_IP` open streams. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "too many open streams from this address",
+                     *       "code": "RATE_LIMITED"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            502: components["responses"]["MarketDataUnavailable"];
+        };
+    };
     pinSimPrice: {
         parameters: {
             query?: never;
@@ -1798,8 +2400,10 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                /** @description next_cursor of the previous page. */
+                /** @description next_cursor of the previous page. Send the same status filter on every page. */
                 cursor?: string;
+                /** @description Only orders in one of these statuses, comma-separated (e.g. `OPEN`, or `FILLED,CANCELLED,REJECTED`). */
+                status?: components["schemas"]["OrderStatus"][];
             };
             header?: never;
             path?: never;
@@ -1825,9 +2429,12 @@ export interface operations {
                      *           "type": "MARKET",
                      *           "status": "FILLED",
                      *           "quantity": 5,
+                     *           "limit_price": null,
+                     *           "stop_price": null,
                      *           "fill_price": 109.89,
                      *           "commission": 1.37,
                      *           "total": 548.08,
+                     *           "reject_reason": null,
                      *           "created_at": "2026-10-26T09:42:00Z",
                      *           "filled_at": "2026-10-26T09:42:00Z"
                      *         }
@@ -1838,7 +2445,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrderPage"];
                 };
             };
-            /** @description limit is not an integer from 1 to 100, or cursor is malformed. */
+            /** @description limit is not an integer from 1 to 100, cursor is malformed, or status is not a list of OrderStatus values. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1868,13 +2475,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "orderbook_id": "SIM-FJRD",
-                 *       "side": "BUY",
-                 *       "quantity": 10
-                 *     }
-                 */
                 "application/json": components["schemas"]["OrderRequest"];
             };
         };
@@ -1888,7 +2488,7 @@ export interface operations {
                     "application/json": components["schemas"]["Order"];
                 };
             };
-            /** @description Executed. */
+            /** @description Executed (MARKET, status FILLED) or accepted (LIMIT/STOP, status OPEN). */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1904,9 +2504,12 @@ export interface operations {
                      *       "type": "MARKET",
                      *       "status": "FILLED",
                      *       "quantity": 10,
+                     *       "limit_price": null,
+                     *       "stop_price": null,
                      *       "fill_price": 100.1,
                      *       "commission": 2.5,
                      *       "total": 1003.5,
+                     *       "reject_reason": null,
                      *       "created_at": "2026-10-25T09:41:00Z",
                      *       "filled_at": "2026-10-25T09:41:00Z"
                      *     }
@@ -1915,8 +2518,9 @@ export interface operations {
                 };
             };
             /**
-             * @description Malformed JSON, blank orderbook_id, side not BUY/SELL, quantity <= 0 or with more than 4 decimals,
-             *     type other than MARKET, or an invalid Idempotency-Key.
+             * @description Malformed JSON, blank orderbook_id, side not BUY/SELL, quantity <= 0 or with more than 4 decimals, an
+             *     unknown type, a missing, non-positive or over-precise (more than 2 decimals) limit_price on LIMIT or
+             *     stop_price on STOP, a price on a type that takes none, or an invalid Idempotency-Key.
              */
             400: {
                 headers: {
@@ -1949,7 +2553,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Business rule; nothing was executed. */
+            /** @description Business rule (buying power or available shares); nothing was executed or reserved. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1959,6 +2563,92 @@ export interface operations {
                 };
             };
             502: components["responses"]["MarketDataUnavailable"];
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": 51,
+                     *       "orderbook_id": "SIM-KALL",
+                     *       "symbol": "KALL",
+                     *       "name": "Kallsten Bank",
+                     *       "side": "BUY",
+                     *       "type": "LIMIT",
+                     *       "status": "FILLED",
+                     *       "quantity": 10,
+                     *       "limit_price": 95,
+                     *       "stop_price": null,
+                     *       "fill_price": 94.89,
+                     *       "commission": 2.37,
+                     *       "total": 951.27,
+                     *       "note": "",
+                     *       "reject_reason": null,
+                     *       "created_at": "2026-11-08T09:41:00Z",
+                     *       "filled_at": "2026-11-08T09:41:03Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["OrderIDValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["OrderNotFound"];
+        };
+    };
+    cancelOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled; the order with status CANCELLED. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["OrderIDValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["OrderNotFound"];
+            /** @description The order is not OPEN any more (already filled, cancelled or rejected). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "order is not open",
+                     *       "code": "ORDER_NOT_OPEN"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     updateOrderNote: {
@@ -2320,7 +3010,10 @@ export interface operations {
                     /**
                      * @example {
                      *       "cash": 98996.5,
+                     *       "reserved_cash": 0,
+                     *       "buying_power": 98996.5,
                      *       "holdings_value": 1100,
+                     *       "vault_value": 0,
                      *       "total_equity": 100096.5,
                      *       "unrealized_pnl": 96.5,
                      *       "realized_pnl": 0,
@@ -2336,7 +3029,8 @@ export interface operations {
                      *           "unrealized_pnl": 96.5,
                      *           "unrealized_pnl_percent": 9.62,
                      *           "day_change_percent": 1.25,
-                     *           "weight": 100
+                     *           "weight": 100,
+                     *           "reserved_quantity": 0
                      *         }
                      *       ],
                      *       "top_movers": [
@@ -2351,7 +3045,8 @@ export interface operations {
                      *           "unrealized_pnl": 96.5,
                      *           "unrealized_pnl_percent": 9.62,
                      *           "day_change_percent": 1.25,
-                     *           "weight": 100
+                     *           "weight": 100,
+                     *           "reserved_quantity": 0
                      *         }
                      *       ]
                      *     }
@@ -2694,6 +3389,380 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The vault status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "balance": 20000,
+                     *       "apy": 0.051,
+                     *       "interest_earned_total": 0,
+                     *       "projected_monthly_interest_on_idle_cash": 335.34
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Vault"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    depositVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "amount": 20000
+                 *     }
+                 */
+                "application/json": components["schemas"]["VaultTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Deposited successfully. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": 1,
+                     *       "type": "DEPOSIT",
+                     *       "amount": 20000,
+                     *       "created_at": "2026-11-08T09:41:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VaultTransaction"];
+                };
+            };
+            /** @description Amount is non-positive or has more than 2 decimal places. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "amount must be positive with at most 2 decimals",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Amount exceeds buying power. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "insufficient buying power",
+                     *       "code": "INSUFFICIENT_FUNDS"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    withdrawVault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "amount": 5000
+                 *     }
+                 */
+                "application/json": components["schemas"]["VaultTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Withdrawn successfully. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": 2,
+                     *       "type": "WITHDRAWAL",
+                     *       "amount": 5000,
+                     *       "created_at": "2026-11-08T09:42:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VaultTransaction"];
+                };
+            };
+            /** @description Amount is non-positive or has more than 2 decimal places. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "amount must be positive with at most 2 decimals",
+                     *       "code": "VALIDATION_ERROR"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Amount exceeds vault balance. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": "insufficient vault balance",
+                     *       "code": "INSUFFICIENT_VAULT_BALANCE"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listVaultTransactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The list of vault transactions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": 2,
+                     *           "type": "WITHDRAWAL",
+                     *           "amount": 5000,
+                     *           "created_at": "2026-11-08T09:42:00Z"
+                     *         },
+                     *         {
+                     *           "id": 1,
+                     *           "type": "DEPOSIT",
+                     *           "amount": 20000,
+                     *           "created_at": "2026-11-08T09:41:00Z"
+                     *         }
+                     *       ],
+                     *       "next_cursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VaultTransactionListResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getLeaderboard: {
+        parameters: {
+            query: {
+                /**
+                 * @description Ranking metric.
+                 * @example return
+                 */
+                metric: components["schemas"]["LeaderboardMetric"];
+                /** @description Maximum entries to return (1–100, default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ranked leaderboard entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaderboardPage"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+        };
+    };
+    askKnowledge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Answer with citations or abstain response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "answer": "Slippage is the difference between the expected price and the execution price.",
+                     *       "citations": [
+                     *         {
+                     *           "article_slug": "slippage",
+                     *           "article_title": "Slippage: Why Orders Fill Off-Price",
+                     *           "chunk_id": "slippage-what-is-slippage",
+                     *           "quoted_text": "Slippage is the difference between expected price of a trade and the price at which the trade is executed."
+                     *         }
+                     *       ],
+                     *       "model": "fake",
+                     *       "disclaimer": "AI-generated · educational, not financial advice"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AskResponse"];
+                };
+            };
+            /** @description Question is empty or exceeds 500 characters. */
+            400: components["responses"]["ValidationError"];
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["AIRefused"];
+            429: components["responses"]["AIBudgetExceeded"];
+            503: components["responses"]["AIUnavailable"];
+        };
+    };
+    listArticles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of articles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "slug": "slippage",
+                     *           "title": "Slippage: Why Orders Fill Off-Price",
+                     *           "summary": "How execution latency and volume affect order fill prices.",
+                     *           "tags": [
+                     *             "execution",
+                     *             "risk"
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ArticleListResponse"];
+                };
+            };
+        };
+    };
+    getArticle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: components["parameters"]["ArticleSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Full article details. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Article"];
+                };
+            };
+            404: components["responses"]["ArticleNotFound"];
+        };
+    };
+    searchArticles: {
+        parameters: {
+            query: {
+                /** @description Search query. Cannot be blank. */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching article chunks ordered by relevance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "slug": "slippage",
+                     *           "title": "Slippage: Why Orders Fill Off-Price",
+                     *           "chunk_id": "slippage-what-is-slippage",
+                     *           "snippet": "<b>Slippage</b> is the difference between the expected price and executed price."
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ArticleSearchResponse"];
+                };
+            };
+            /** @description Query parameter q is empty or blank. */
+            400: components["responses"]["ValidationError"];
         };
     };
 }

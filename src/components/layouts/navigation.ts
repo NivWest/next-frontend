@@ -1,11 +1,12 @@
 import {
   BarChart3,
-  HelpCircle,
+  BookOpen,
   LayoutDashboard,
   LineChart,
   ListOrdered,
   Settings,
   Star,
+  Trophy,
   Vault,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -27,6 +28,7 @@ export interface NavGroups {
 export const NAV_ITEMS: NavGroups = {
   main: [
     { label: 'Dashboard', href: ROUTES.dashboard, icon: LayoutDashboard },
+    { label: 'Leaderboard', href: ROUTES.leaderboard, icon: Trophy },
     { label: 'Watchlist', href: ROUTES.watchlist, icon: Star },
     { label: 'The Vault', href: ROUTES.vault, icon: Vault },
     { label: 'Orders', href: ROUTES.orders, icon: ListOrdered },
@@ -35,7 +37,7 @@ export const NAV_ITEMS: NavGroups = {
   ],
   footer: [
     { label: 'Settings', href: ROUTES.settings, icon: Settings },
-    { label: 'Help center', href: ROUTES.help, icon: HelpCircle },
+    { label: 'Learn', href: ROUTES.learn, icon: BookOpen },
   ],
 };
 

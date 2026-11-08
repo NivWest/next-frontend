@@ -12,6 +12,7 @@ const guest: UserProfile = {
   role: 'guest',
   balance: 100000,
   is_guest: true,
+  leaderboard_opt_in: false,
 };
 
 const member: UserProfile = {
@@ -21,6 +22,7 @@ const member: UserProfile = {
   role: 'member',
   balance: 100000,
   is_guest: false,
+  leaderboard_opt_in: false,
 };
 
 const navigation = vi.hoisted(() => ({
@@ -149,7 +151,7 @@ describe('Sidebar', () => {
         ['Analytics', '/analytics'],
         ['Markets', '/markets'],
         ['Settings', '/settings'],
-        ['Help center', '/help'],
+        ['Learn', '/learn'],
       ];
       for (const [name, href] of expected) {
         expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);

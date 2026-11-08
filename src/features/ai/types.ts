@@ -18,6 +18,10 @@ export type AIFeatureUsage = Schemas['AIFeatureUsage'];
 
 export type AIFeature = Schemas['AIFeature'];
 
+export type AskRequest = Schemas['AskRequest'];
+export type AskResponse = Schemas['AskResponse'];
+export type Citation = Schemas['Citation'];
+
 /** `code` values of the `{error, code}` bodies the AI endpoints answer with; each must be an `ErrorCode` of the contract. */
 export const AI_ERROR_CODES = [
   'UNAUTHENTICATED',

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
-import { listOrders, updateOrderNote } from '../api/orders';
+import { cancelOrder, getOrder, listOrders, updateOrderNote } from '../api/orders';
 
 type FetchMock = Mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>;
 
@@ -23,6 +23,7 @@ describe('listOrders', () => {
     { params: { limit: 20, cursor: 'eyJjIjoiMjAyNiJ9' }, url: '/api/v1/orders?limit=20&cursor=eyJjIjoiMjAyNiJ9' },
     { params: { cursor: null }, url: '/api/v1/orders' },
     { params: { cursor: '' }, url: '/api/v1/orders' },
+    { params: { status: ['OPEN'] as const }, url: '/api/v1/orders?status=OPEN' },
   ])('$params → $url', async ({ params, url }) => {
     await expect(listOrders(params)).resolves.toEqual({ items: [], next_cursor: null });
     expect(String(fetchMock.mock.calls[0][0])).toBe(url);
@@ -40,5 +41,22 @@ describe('updateOrderNote', () => {
     expect(String(url)).toBe('/api/v1/orders/42/note');
     expect(init?.method).toBe('PATCH');
     expect(init?.body).toBe(JSON.stringify({ note: 'Buying dip' }));
+  });
+});
+
+describe('getOrder', () => {
+  it('calls GET /api/v1/orders/{id}', async () => {
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ id: 42 }), { status: 200 }));
+    await expect(getOrder(42)).resolves.toEqual({ id: 42 });
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/v1/orders/42');
+  });
+});
+
+describe('cancelOrder', () => {
+  it('calls DELETE /api/v1/orders/{id}', async () => {
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ id: 42, status: 'CANCELLED' }), { status: 200 }));
+    await expect(cancelOrder(42)).resolves.toEqual({ id: 42, status: 'CANCELLED' });
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/v1/orders/42');
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('DELETE');
   });
 });

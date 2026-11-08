@@ -1,5 +1,5 @@
-import { apiGet } from '@/lib/api';
-import type { AIUsage, InstrumentBrief } from '../types';
+import { apiGet, apiPost } from '@/lib/api';
+import type { AIUsage, AskResponse, InstrumentBrief } from '../types';
 
 // Client for the AI endpoints (backend api/openapi.yaml /ai…, story NW-14). Both need a session.
 // Errors reject with an `ApiRequestError` (src/lib/api.ts) whose `code` is an `AIErrorCode`.
@@ -12,4 +12,9 @@ export function getInstrumentBrief(orderbookId: string, signal?: AbortSignal): P
 /** GET /ai/usage — the signed-in user's token budget and usage today. */
 export function getAIUsage(): Promise<AIUsage> {
   return apiGet('/ai/usage');
+}
+
+/** POST /ai/ask — ask a trading concept question answered with citations (story NW-15). */
+export function askKnowledge(question: string): Promise<AskResponse> {
+  return apiPost('/ai/ask', { body: { question } });
 }

@@ -1,10 +1,5 @@
-import type { Metadata } from 'next';
-import { Help } from '@/features/help/components/Help';
-
-export const metadata: Metadata = {
-  title: 'Help',
-};
+import { redirect } from 'next/navigation';
 
 export default function HelpPage() {
-  return <Help />;
+  redirect('/learn');
 }

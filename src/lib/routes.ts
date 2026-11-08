@@ -3,6 +3,7 @@
 
 export const ROUTES = {
   dashboard: '/dashboard',
+  leaderboard: '/leaderboard',
   watchlist: '/watchlist',
   vault: '/vault',
   orders: '/orders',
@@ -10,14 +11,20 @@ export const ROUTES = {
   insights: '/insights',
   settings: '/settings',
   markets: '/markets',
-  help: '/help',
+  learn: '/learn',
+  help: '/learn',
   login: '/login',
 } as const;
 
 export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES];
 
 /** Routes an unauthenticated visitor may open without being sent to /login. */
-export const PUBLIC_ROUTES: readonly AppRoute[] = [ROUTES.markets, ROUTES.help, ROUTES.login];
+export const PUBLIC_ROUTES: readonly AppRoute[] = [ROUTES.markets, ROUTES.learn, ROUTES.help, ROUTES.login];
+
+/** `/learn/<slug>`. */
+export function learnArticleHref(slug: string): string {
+  return `${ROUTES.learn}/${encodeURIComponent(slug)}`;
+}
 
 /** `/markets?q=<query>`; an empty query links to plain `/markets`. */
 export function marketsSearchHref(query: string): string {

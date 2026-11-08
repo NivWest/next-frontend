@@ -116,7 +116,7 @@ describe('useWatchlistStore', () => {
   });
 
   it('forgets the lists when the signed-in user changes', () => {
-    const user: UserProfile = { id: 1, name: 'Guest trader', email: 'g@guest.invalid', role: 'guest', balance: 100000, is_guest: true };
+    const user: UserProfile = { id: 1, name: 'Guest trader', email: 'g@guest.invalid', role: 'guest', balance: 100000, is_guest: true, leaderboard_opt_in: false };
     useUIStore.setState({ user });
     useWatchlistStore.setState({ watchlists: [energy], status: 'ready' });
     useUIStore.setState({ user: { ...user } }); // same user: kept

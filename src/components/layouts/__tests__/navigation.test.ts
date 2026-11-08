@@ -6,6 +6,7 @@ describe('NAV_ITEMS', () => {
   it('lists the main screens in order, ending with Markets', () => {
     expect(NAV_ITEMS.main.map((item) => [item.label, item.href])).toEqual([
       ['Dashboard', ROUTES.dashboard],
+      ['Leaderboard', ROUTES.leaderboard],
       ['Watchlist', ROUTES.watchlist],
       ['The Vault', ROUTES.vault],
       ['Orders', ROUTES.orders],
@@ -14,10 +15,10 @@ describe('NAV_ITEMS', () => {
     ]);
   });
 
-  it('pins Settings and Help center to the footer', () => {
+  it('pins Settings and Learn to the footer', () => {
     expect(NAV_ITEMS.footer.map((item) => [item.label, item.href])).toEqual([
       ['Settings', ROUTES.settings],
-      ['Help center', ROUTES.help],
+      ['Learn', ROUTES.learn],
     ]);
   });
 

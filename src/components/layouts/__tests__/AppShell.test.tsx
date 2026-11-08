@@ -66,7 +66,7 @@ describe('AppShell', () => {
     expect(drawer).toHaveAttribute('aria-modal', 'true');
     expect(drawer).toHaveAttribute('id', screen.getByRole('button', { name: 'Open navigation' }).getAttribute('aria-controls'));
     expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveAttribute('aria-expanded', 'true');
-    for (const name of ['Dashboard', 'Watchlist', 'The Vault', 'Orders', 'Analytics', 'Markets', 'Settings', 'Help center']) {
+    for (const name of ['Dashboard', 'Watchlist', 'The Vault', 'Orders', 'Analytics', 'Markets', 'Settings', 'Learn']) {
       expect(within(drawer).getByRole('link', { name })).toBeInTheDocument();
     }
     expect(within(drawer).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');

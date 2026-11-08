@@ -9,12 +9,15 @@ import { AiBriefCard } from '@/features/ai/components/AiBriefCard';
 import { OrderTicket } from '@/features/trading/components/OrderTicket';
 import { AddToWatchlistMenu } from '@/features/watchlist/components/AddToWatchlistMenu';
 import { getInstrumentDetails, getQuote } from '../api/market';
+import { useLiveQuote } from '../hooks/useLiveQuotes';
 import {
   DEFAULT_CANDLE_PERIOD,
   isSimulatedInstrument,
   type InstrumentDetails,
   type Quote,
 } from '../types';
+import { FlashValue } from './FlashValue';
+import { LiveIndicator } from './LiveIndicator';
 import { PriceChart } from './PriceChart';
 import { SimulatedBadge } from './SimulatedBadge';
 
@@ -57,6 +60,8 @@ function changeClass(value: number): string {
 /** Public instrument page at `/markets/<orderbookId>`: quote, order ticket, price chart, company overview and key indicators. */
 export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
   const [result, setResult] = useState<LoadResult | null>(null);
+  // Live prices (story NW-09): the header follows the stream once it delivers; the loaded quote is the fallback.
+  const { live, status: streamStatus } = useLiveQuote(orderbookId);
 
   useEffect(() => {
     let isMounted = true;
@@ -89,6 +94,7 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold text-white">{title}</h1>
         {isSimulatedInstrument(orderbookId) && <SimulatedBadge />}
+        <LiveIndicator status={streamStatus} />
         {/* Top of the page, away from the fixed cookie banner and toasts at the bottom. */}
         {details && (
           <div className="ml-auto">
@@ -131,7 +137,9 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
     );
   }
 
-  const { quote } = current;
+  // The header has no polling of its own, so the last streamed quote stays newer than the loaded one even
+  // while the stream reconnects.
+  const quote = live?.quote ?? current.quote;
   const currency = current.details.currency || quote.currency;
   const { pe_ratio, dividend_yield_pct, market_cap } = current.details.key_indicators;
   const indicators: ReadonlyArray<{ label: string; value: string }> = [
@@ -147,7 +155,9 @@ export function InstrumentPage({ orderbookId }: InstrumentPageProps) {
       <div className="space-y-8">
         <section aria-label="Quote" className="flex flex-wrap items-end gap-x-8 gap-y-3">
           <div>
-            <span className="block text-3xl font-semibold text-white">{formatMoney(quote.last, currency)}</span>
+            <span className="block text-3xl font-semibold text-white" data-testid="quote-last">
+              <FlashValue live={live}>{formatMoney(quote.last, currency)}</FlashValue>
+            </span>
             <span className={`text-sm font-medium ${changeClass(quote.change_percent)}`}>
               {formatPercent(quote.change_percent)}
             </span>

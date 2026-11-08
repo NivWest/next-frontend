@@ -33,9 +33,26 @@ export const ORDER_ERROR_CODES = [
   'INSUFFICIENT_FUNDS',
   'INSUFFICIENT_SHARES',
   'MARKET_DATA_UNAVAILABLE',
+  'ORDER_NOT_FOUND',
+  'ORDER_NOT_OPEN',
 ] as const satisfies readonly ErrorCode[];
 
 export type OrderErrorCode = (typeof ORDER_ERROR_CODES)[number];
+
+/** Input of `previewReservation()`: side, order type, quantity, limit/stop prices. */
+export interface ReservationInput {
+  side: OrderSide;
+  type: OrderType;
+  quantity: number;
+  limitPrice?: number | null;
+  stopPrice?: number | null;
+}
+
+/** Result of `previewReservation()`: cash reserved in SEK (BUY) or shares reserved (SELL). */
+export interface ReservationPreview {
+  cash: number;
+  shares: number;
+}
 
 /** Input of `previewOrder()`: the side, the share count and the live quote's bid and ask. */
 export interface OrderPreviewInput {
