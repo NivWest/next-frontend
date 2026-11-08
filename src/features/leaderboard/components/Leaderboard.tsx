@@ -50,7 +50,10 @@ export function Leaderboard() {
 	}, [activeTab, refreshIndex]);
 
 	const handleTabChange = (tab: LeaderboardTab) => {
-		if (tab === activeTab) return;
+		if (tab === activeTab) {
+			setRefreshIndex((idx) => idx + 1);
+			return;
+		}
 		setLoading(true);
 		setActiveTab(tab);
 	};
